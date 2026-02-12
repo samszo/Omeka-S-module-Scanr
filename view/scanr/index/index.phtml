@@ -1,0 +1,29 @@
+<?php
+$this->htmlElement('body')->appendAttribute('class', 'scanr');
+$this->headTitle($this->translate('ScanR - Recherche de personnes'));
+?>
+
+<div id="page-actions">
+    <?php echo $this->hyperlink($this->translate('Rechercher'), $this->url('admin/scanr/search'), ['class' => 'button']); ?>
+</div>
+
+<h1><?php echo $this->translate('ScanR - Module de recherche'); ?></h1>
+
+<div class="scanr-intro">
+    <p><?php echo $this->translate('Ce module vous permet de rechercher et d\'importer des informations sur des personnes depuis la base de données scanR du Ministère de l\'Enseignement Supérieur et de la Recherche.'); ?></p>
+    
+    <h2><?php echo $this->translate('Fonctionnalités'); ?></h2>
+    <ul>
+        <li><?php echo $this->translate('Recherche de personnes par nom, prénom ou affiliation'); ?></li>
+        <li><?php echo $this->translate('Importation des données dans Omeka S'); ?></li>
+        <li><?php echo $this->translate('Accès aux informations sur les domaines de recherche et affiliations'); ?></li>
+    </ul>
+    
+    <p>
+        <?php echo $this->hyperlink(
+            $this->translate('Commencer une recherche'),
+            $this->url('admin/scanr/search'),
+            ['class' => 'button']
+        ); ?>
+    </p>
+</div>

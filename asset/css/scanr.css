@@ -1,0 +1,97 @@
+/* ScanR Module Styles */
+
+.scanr-intro {
+    margin: 20px 0;
+    padding: 20px;
+    background: #f5f5f5;
+    border-left: 4px solid #0066cc;
+}
+
+.scanr-intro h2 {
+    margin-top: 0;
+    color: #333;
+}
+
+.scanr-intro ul {
+    list-style-type: disc;
+    margin-left: 20px;
+}
+
+.scanr-search-form {
+    margin: 20px 0;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.scanr-search-form input[type="text"] {
+    width: 70%;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.scanr-search-form button[type="submit"],
+.scanr-search-form input[type="submit"] {
+    padding: 10px 20px;
+    font-size: 16px;
+    margin-left: 10px;
+}
+
+.scanr-results {
+    margin: 30px 0;
+}
+
+.scanr-results .results-count {
+    margin: 15px 0;
+    font-weight: bold;
+    color: #666;
+}
+
+.scanr-results table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+}
+
+.scanr-results table th {
+    background: #0066cc;
+    color: white;
+    padding: 10px;
+    text-align: left;
+    font-weight: bold;
+}
+
+.scanr-results table td {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+.scanr-results table tr:hover {
+    background: #f9f9f9;
+}
+
+.scanr-results .no-results {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+    font-style: italic;
+}
+
+.pagination {
+    margin: 20px 0;
+    text-align: center;
+}
+
+.pagination .page-info {
+    display: inline-block;
+    margin: 0 15px;
+    padding: 10px;
+    color: #666;
+}
+
+.pagination .button {
+    margin: 0 5px;
+}

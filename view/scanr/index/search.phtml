@@ -1,0 +1,110 @@
+<?php
+$this->htmlElement('body')->appendAttribute('class', 'scanr search');
+$this->headTitle($this->translate('ScanR - Recherche de personnes'));
+?>
+
+<nav class="section-nav">
+    <?php echo $this->hyperlink($this->translate('Retour'), $this->url('admin/scanr'), ['class' => 'button']); ?>
+</nav>
+
+<h1><?php echo $this->translate('Rechercher des personnes dans scanR'); ?></h1>
+
+<div class="scanr-search-form">
+    <?php echo $this->form($form); ?>
+</div>
+
+<?php if (isset($results)): ?>
+    <div class="scanr-results">
+        <h2><?php echo sprintf($this->translate('Résultats de recherche pour "%s"'), $this->escapeHtml($query)); ?></h2>
+        
+        <?php if ($results['total'] > 0): ?>
+            <p class="results-count">
+                <?php echo sprintf(
+                    $this->translate('%d résultat(s) trouvé(s)'),
+                    $results['total']
+                ); ?>
+            </p>
+            
+            <table class="tablesaw" data-tablesaw-mode="stack">
+                <thead>
+                    <tr>
+                        <th><?php echo $this->translate('Nom'); ?></th>
+                        <th><?php echo $this->translate('Prénom'); ?></th>
+                        <th><?php echo $this->translate('Affiliations'); ?></th>
+                        <th><?php echo $this->translate('Domaines'); ?></th>
+                        <th><?php echo $this->translate('Actions'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($results['hits'] as $person): ?>
+                        <tr>
+                            <td><?php echo $this->escapeHtml($person['lastName']); ?></td>
+                            <td><?php echo $this->escapeHtml($person['firstName']); ?></td>
+                            <td>
+                                <?php
+                                if (!empty($person['affiliations'])) {
+                                    $affiliationNames = array_map(function($aff) {
+                                        return $aff['structure']['label'] ?? '';
+                                    }, array_slice($person['affiliations'], 0, 2));
+                                    echo $this->escapeHtml(implode(', ', array_filter($affiliationNames)));
+                                    if (count($person['affiliations']) > 2) {
+                                        echo ' ...';
+                                    }
+                                }
+                                ?>
+                            </td>
+                            <td>
+                                <?php
+                                if (!empty($person['domains'])) {
+                                    $domainLabels = array_map(function($domain) {
+                                        return $domain['label'] ?? '';
+                                    }, array_slice($person['domains'], 0, 2));
+                                    echo $this->escapeHtml(implode(', ', array_filter($domainLabels)));
+                                    if (count($person['domains']) > 2) {
+                                        echo ' ...';
+                                    }
+                                }
+                                ?>
+                            </td>
+                            <td>
+                                <form method="post" action="<?php echo $this->url('admin/scanr/import'); ?>" style="display: inline;">
+                                    <input type="hidden" name="person_id" value="<?php echo $this->escapeHtml($person['id']); ?>">
+                                    <button type="submit" class="button" onclick="return confirm('<?php echo $this->translate('Importer cette personne ?'); ?>');">
+                                        <?php echo $this->translate('Importer'); ?>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            
+            <?php if ($totalPages > 1): ?>
+                <div class="pagination">
+                    <?php if ($currentPage > 1): ?>
+                        <?php echo $this->hyperlink(
+                            $this->translate('← Précédent'),
+                            $this->url('admin/scanr/search', [], ['query' => ['page' => $currentPage - 1]]),
+                            ['class' => 'button']
+                        ); ?>
+                    <?php endif; ?>
+                    
+                    <span class="page-info">
+                        <?php echo sprintf($this->translate('Page %d sur %d'), $currentPage, $totalPages); ?>
+                    </span>
+                    
+                    <?php if ($currentPage < $totalPages): ?>
+                        <?php echo $this->hyperlink(
+                            $this->translate('Suivant →'),
+                            $this->url('admin/scanr/search', [], ['query' => ['page' => $currentPage + 1]]),
+                            ['class' => 'button']
+                        ); ?>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+            
+        <?php else: ?>
+            <p class="no-results"><?php echo $this->translate('Aucun résultat trouvé.'); ?></p>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
