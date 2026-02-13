@@ -1,0 +1,32 @@
+{
+    "name": "samszo/omeka-s-module-scanr",
+    "description": "Omeka S module for managing seach person in scanr database",
+    "type": "omeka-s-module",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Samuel Szoniecky",
+            "email": "samuel.szoniecky@univ-paris8.fr"
+        }
+    ],
+    "keywords": [
+        "omeka",
+        "omeka-s",
+        "elasticsearch",
+        "scanr"
+    ],
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "elasticsearch/elasticsearch": "^8.18"       
+    },
+    "autoload": {
+        "psr-4": {
+            "Scanr\\": "src/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    }
+}

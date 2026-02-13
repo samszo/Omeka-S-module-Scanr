@@ -1,9 +1,9 @@
 <?php
-namespace ScanR\Service\Form;
+namespace Scanr\Service\Form;
 
 use Interop\Container\ContainerInterface;
 use Laminas\ServiceManager\Factory\FactoryInterface;
-use ScanR\Form\SearchForm;
+use Scanr\Form\SearchForm;
 
 class SearchFormFactory implements FactoryInterface
 {

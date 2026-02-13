@@ -1,13 +1,13 @@
 <?php
 $this->htmlElement('body')->appendAttribute('class', 'scanr');
-$this->headTitle($this->translate('ScanR - Recherche de personnes'));
+$this->headTitle($this->translate('Scanr - Recherche de personnes'));
 ?>
 
 <div id="page-actions">
     <?php echo $this->hyperlink($this->translate('Rechercher'), $this->url('admin/scanr/search'), ['class' => 'button']); ?>
 </div>
 
-<h1><?php echo $this->translate('ScanR - Module de recherche'); ?></h1>
+<h1><?php echo $this->translate('Scanr - Module de recherche'); ?></h1>
 
 <div class="scanr-intro">
     <p><?php echo $this->translate('Ce module vous permet de rechercher et d\'importer des informations sur des personnes depuis la base de données scanR du Ministère de l\'Enseignement Supérieur et de la Recherche.'); ?></p>

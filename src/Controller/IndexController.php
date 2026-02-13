@@ -1,10 +1,10 @@
 <?php
-namespace ScanR\Controller;
+namespace Scanr\Controller;
 
 use Laminas\Mvc\Controller\AbstractActionController;
 use Laminas\View\Model\ViewModel;
-use ScanR\Service\ApiClient;
-use ScanR\Form\SearchForm;
+use Scanr\Service\ApiClient;
+use Scanr\Form\SearchForm;
 use Omeka\Mvc\Exception\NotFoundException;
 
 class IndexController extends AbstractActionController
@@ -30,6 +30,7 @@ class IndexController extends AbstractActionController
         $this->searchForm = $searchForm;
         $this->api = $api;
     }
+
 
     public function indexAction()
     {

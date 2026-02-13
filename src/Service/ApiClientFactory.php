@@ -1,5 +1,5 @@
 <?php
-namespace ScanR\Service;
+namespace Scanr\Service;
 
 use Interop\Container\ContainerInterface;
 use Laminas\ServiceManager\Factory\FactoryInterface;

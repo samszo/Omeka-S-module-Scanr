@@ -1,4 +1,4 @@
-# Omeka-S-module-ScanR
+# Omeka-S-module-Scanr
 
 Module Omeka S pour interroger l'API Elasticsearch de scanR et enregistrer les informations liées aux personnes.
 
@@ -18,15 +18,16 @@ scanR est une plateforme qui recense les acteurs de la recherche et de l'innovat
 ## Installation
 
 1. Téléchargez ou clonez ce module dans le répertoire `modules` de votre installation Omeka S
-2. Renommez le dossier en `ScanR` si nécessaire
-3. Dans l'interface d'administration d'Omeka S, allez dans Modules
-4. Trouvez "ScanR" dans la liste et cliquez sur "Installer"
+2. Renommez le dossier en `Scanr` si nécessaire
+3. Avec un terminal, dans le repertoire `Scanr`, exécuter : composer install --no-dev
+4. Dans l'interface d'administration d'Omeka S, allez dans Modules
+5. Trouvez "Scanr" dans la liste et cliquez sur "Installer"
 
 ## Configuration
 
 Après l'installation, vous pouvez configurer le module :
 
-1. Cliquez sur "Configurer" à côté du module ScanR
+1. Cliquez sur "Configurer" à côté du module Scanr
 2. Modifiez l'URL de l'API si nécessaire (par défaut : `https://scanr-api.enseignementsup-recherche.gouv.fr`)
 3. Enregistrez les modifications
 
@@ -34,7 +35,7 @@ Après l'installation, vous pouvez configurer le module :
 
 ### Rechercher des personnes
 
-1. Dans le menu d'administration, cliquez sur "ScanR"
+1. Dans le menu d'administration, cliquez sur "Scanr"
 2. Cliquez sur "Rechercher des personnes"
 3. Entrez un nom, prénom, ou affiliation dans le champ de recherche
 4. Cliquez sur "Rechercher"
@@ -84,4 +85,4 @@ GPL-3.0
 
 ## Support
 
-Pour signaler des bugs ou demander des fonctionnalités, veuillez utiliser le système d'issues de GitHub : https://github.com/samszo/Omeka-S-module-ScanR/issues
+Pour signaler des bugs ou demander des fonctionnalités, veuillez utiliser le système d'issues de GitHub : https://github.com/samszo/Omeka-S-module-Scanr/issues

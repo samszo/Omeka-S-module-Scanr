@@ -1,5 +1,5 @@
 <?php
-namespace ScanR\Form;
+namespace Scanr\Form;
 
 use Laminas\Form\Form;
 use Laminas\Form\Element;

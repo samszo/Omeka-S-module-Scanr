@@ -1,12 +1,12 @@
 <?php
-namespace ScanR\Service;
+namespace Scanr\Service;
 
-use Laminas\Http\Client as HttpClient;
-use Laminas\Http\Request;
 use Omeka\Settings\Settings;
+use Elastic\Elasticsearch\ClientBuilder;
 
 /**
  * Client pour l'API Elasticsearch de scanR
+ * documentation : https://scanr.enseignementsup-recherche.gouv.fr/docs/
  */
 class ApiClient
 {
@@ -16,9 +16,9 @@ class ApiClient
     protected $apiUrl;
 
     /**
-     * @var HttpClient
+     * @var client
      */
-    protected $httpClient;
+    protected $client;
 
     /**
      * @var Settings
@@ -27,18 +27,22 @@ class ApiClient
 
     public function __construct(Settings $settings)
     {
+
         $this->settings = $settings;
-        $this->apiUrl = $settings->get('scanr_api_url', 'https://scanr-api.enseignementsup-recherche.gouv.fr');
-        $this->httpClient = new HttpClient();
-        $this->httpClient->setOptions([
-            'timeout' => 30,
-            'adapter' => 'Laminas\Http\Client\Adapter\Curl',
-        ]);
+        $this->apiUrl = $settings->get('scanr_url', 'https://scanr-api.enseignementsup-recherche.gouv.fr');
+        $user = $settings->get('scanr_username');
+        $pwd = $settings->get('scanr_pwd');
+        if(!isset($user) || !isset($pwd)) throw new \Exception("Error querying scanR API: Veuillez saisir le nom de l'utilisateur et les mot de passe");
+
+        $this->client = ClientBuilder::create()
+            ->setHosts([$this->apiUrl])
+            ->setBasicAuthentication($user, $pwd)
+            ->build();
     }
 
     /**
      * Rechercher des personnes dans scanR
-     *
+     * cf/ https://www.elastic.co/docs/reference/elasticsearch/clients/php/search_operations
      * @param string $query Requête de recherche
      * @param int $page Page de résultats (commence à 0)
      * @param int $size Nombre de résultats par page
@@ -46,55 +50,21 @@ class ApiClient
      */
     public function searchPersons($query, $page = 0, $size = 20)
     {
-        $endpoint = $this->apiUrl . '/persons/_search';
-        
-        // Construction de la requête Elasticsearch
-        $searchQuery = [
-            'query' => [
-                'bool' => [
-                    'should' => [
-                        [
-                            'multi_match' => [
-                                'query' => $query,
-                                'fields' => [
-                                    'firstName^2',
-                                    'lastName^3',
-                                    'fullName^4',
-                                    'affiliations.structure.label',
-                                ],
-                                'type' => 'best_fields',
-                                'fuzziness' => 'AUTO',
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-            'from' => $page * $size,
-            'size' => $size,
-            '_source' => [
-                'id',
-                'firstName',
-                'lastName',
-                'fullName',
-                'domains',
-                'affiliations',
-                'awards',
-                'publications',
-            ],
+        $params = [
+            'index' => 'scanr-persons',
+            'body'  => [
+                'query' => [
+                    'match' => [
+                        'fullName' => $query
+                    ]
+                ]
+            ]
         ];
-
         try {
-            $this->httpClient->setUri($endpoint);
-            $this->httpClient->setMethod(Request::METHOD_POST);
-            $this->httpClient->setHeaders([
-                'Content-Type' => 'application/json',
-            ]);
-            $this->httpClient->setRawBody(json_encode($searchQuery));
+            $response = $this->client->search($params);
 
-            $response = $this->httpClient->send();
-
-            if ($response->isSuccess()) {
-                $data = json_decode($response->getBody(), true);
+            if (isset($response['hits']['hits']) && count($response['hits']['hits']) > 0) {
+                $data = $response->asArray();
                 return $this->formatSearchResults($data);
             } else {
                 throw new \Exception('API request failed: ' . $response->getStatusCode() . ' - ' . $response->getReasonPhrase());

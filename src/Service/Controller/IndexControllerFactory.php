@@ -1,19 +1,22 @@
 <?php
-namespace ScanR\Service\Controller;
+namespace Scanr\Service\Controller;
 
 use Interop\Container\ContainerInterface;
 use Laminas\ServiceManager\Factory\FactoryInterface;
-use ScanR\Controller\IndexController;
+use Scanr\Controller\IndexController;
+
 
 class IndexControllerFactory implements FactoryInterface
 {
     public function __invoke(ContainerInterface $services, $requestedName, array $options = null)
     {
-        $apiClient = $services->get('ScanR\ApiClient');
+        $apiClient = $services->get('Scanr\ApiClient');
         $formElementManager = $services->get('FormElementManager');
-        $searchForm = $formElementManager->get(\ScanR\Form\SearchForm::class);
+        $searchForm = $formElementManager->get(\Scanr\Form\SearchForm::class);
         $api = $services->get('Omeka\ApiManager');
+
+        $indexController = new IndexController($apiClient, $searchForm, $api);
         
-        return new IndexController($apiClient, $searchForm, $api);
+        return $indexController;
     }
 }
