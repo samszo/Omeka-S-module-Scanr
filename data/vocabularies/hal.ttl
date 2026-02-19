@@ -1,0 +1,92 @@
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix vs: <http://www.w3.org/2003/06/sw-vocab-status/ns#> .
+@prefix o: <http://omeka.org/s/vocabs/o#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix ma: <http://www.w3.org/ns/ma-ont#>.
+@prefix hal: <https://data.hal.science/doc/schema#> .
+
+<https://data.hal.science/doc/schema#> a owl:Ontology ;
+    dcterms:title "HAL (Hyper Articles en Ligne)" .
+
+hal:status a rdf:Property ;
+    rdfs:label "status" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:msr a rdf:Property ;
+    rdfs:label "msr" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:idref a rdf:Property ;
+    rdfs:label "Identifiants et Référentiels pour l'ESR (idref)" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:isni a rdf:Property ;
+    rdfs:label "International Standard Name Identifier (isni)" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:ror a rdf:Property ;
+    rdfs:label "Research Organization Registry (ROR)" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:rnsr a rdf:Property ;
+    rdfs:label "Répertoire National des Structures de Recherche (RNSR)" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+    
+hal:orcid a rdf:Property ;
+    rdfs:label "Open Researcher and Contributor ID (ORCID)" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+    
+hal:viaf a rdf:Property ;
+    rdfs:label "Virtual International Authority File (VIAF)" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:researchid a rdf:Property ;
+    rdfs:label "researchid (researchid)" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+    
+hal:arXivId a rdf:Property ;
+    rdfs:label "identifiant arXiv" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:pmcid a rdf:Property ;
+    rdfs:label "identifiant pmcid" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:pubmed a rdf:Property ;
+    rdfs:label "identifiant pubmed" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:topic a rdf:Property ;
+    rdfs:label "topic" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:Author a rdfs:Class ;
+    rdfs:label "Auteur" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:person a rdf:Property ;
+    rdfs:label "personne" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+hal:structure a rdf:Property ;
+    rdfs:label "structure" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .

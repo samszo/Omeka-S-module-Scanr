@@ -5,13 +5,16 @@ if (!class_exists('Common\TraitModule', false)) {
     require_once dirname(__DIR__) . '/Common/TraitModule.php';
 }
 
+
 use Common\TraitModule;
 use Omeka\Module\AbstractModule;
-use Laminas\View\Renderer\PhpRenderer;
+use Common\Stdlib\PsrMessage;
+use Laminas\EventManager\SharedEventManagerInterface;
 use Laminas\ModuleManager\ModuleManager;
+use Laminas\View\Renderer\PhpRenderer;
 use Laminas\Mvc\MvcEvent;
 use Laminas\EventManager\Event;
-use Laminas\EventManager\SharedEventManagerInterface;
+use Scanr\Form\BatchEditFieldset;
 
 class Module extends AbstractModule
 {
@@ -41,15 +44,9 @@ class Module extends AbstractModule
         $plugins = $services->get('ControllerPluginManager');
         $messenger = $plugins->get('messenger');
 
-        /*
-        if (!method_exists($this, 'checkModuleActiveVersion') || !$this->checkModuleActiveVersion('Scanr', '1.0.0.1')) {
-            $message = new \Omeka\Stdlib\Message(
-                $translator->translate('The module %1$s should be upgraded to version %2$s or later.'), // @translate
-                'Scanr', '1.0.0.1'
-            );
-            throw new \Omeka\Module\Exception\ModuleCannotInstallException((string) $message);
+        if (!class_exists(\Common\ManageModuleAndResources::class, false)) {
+            require_once dirname(__DIR__) . '/Common/src/ManageModuleAndResources.php';
         }
-        */
 
         $config = $services->get('Config');
         $basePath = $config['file_store']['local']['base_path'] ?: (OMEKA_PATH . '/files');
@@ -61,7 +58,6 @@ class Module extends AbstractModule
             $messenger->addWarning($message);
         }
     }
-
 
     public function attachListeners(SharedEventManagerInterface $sharedEventManager): void
     {
@@ -116,7 +112,7 @@ class Module extends AbstractModule
         $request = $event->getParam('request');
         $data = $request->getContent();
 
-        if (empty($data['mailing']['mailing_merge_to_listmonk'])) {
+        if (empty($data['scanr']['scanr_merge'])) {
             return;
         }
 
@@ -139,9 +135,9 @@ class Module extends AbstractModule
         ];
 
 
-        if(!empty($data['mailing']['mailing_merge_to_listmonk'])){
-            $params['pipeline'] = "merge_to_listmonk";
-            $this->createJob(\Mailing\Job\mergeItemDataToSubscribters::class, $params, $url, $dispatcher, $messenger);                
+        if(!empty($data['scanr']['scanr_merge'])){
+            $params['pipeline'] = "merge_from_scanr";
+            $this->createJob(\Scanr\Job\addScanrData::class, $params, $url, $dispatcher, $messenger);                
         }
         
    }
@@ -150,7 +146,7 @@ class Module extends AbstractModule
     {
         $job = $dispatcher->dispatch($jobName, $params);
         $message = new \Omeka\Stdlib\Message(
-            $params['pipeline'].' via a '.$params['service'].' derivated background job='.$job->getId()
+            $params['pipeline'].' derivated background job='.$job->getId()
             . ' ids='.$params['idFirst'].' -> '.$params['idLast']
         );
         $message->setEscapeHtml(false);

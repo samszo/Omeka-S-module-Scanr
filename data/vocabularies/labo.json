@@ -1,0 +1,20 @@
+{
+    "vocabulary": {
+        "o:namespace_uri": "https://jardindesconnaissances.univ-paris8.fr/onto/labo#",
+        "o:prefix": "labo",
+        "o:label": "Laboratoire de Recherche",
+        "o:comment": "Generic and common properties that are useful in Omeka for research laboratory."
+    },
+    "strategy": "file",
+    "options": {
+        "file": "labo.ttl",
+        "format": "turtle"
+    },
+    "update": {
+        "namespace_uri": "https://jardindesconnaissances.univ-paris8.fr/onto/labo#",
+        "properties": {
+            "newResource": "new",
+            "reservedAccess": "reserved"
+        }
+    }
+}

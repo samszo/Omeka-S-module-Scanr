@@ -11,25 +11,25 @@ class BatchEditFieldset extends Fieldset
     {
         // Omeka ne gère pas les fieldsets, mais cela permet d'avoir un titre.
         $this
-            ->setName('mailing')
+            ->setName('scanr')
             ->setOptions([
-                'label' => 'Mailing', // @translate
+                'label' => 'Scanr', // @translate
             ])
             ->setAttributes([
-                'id' => 'mailing',
+                'id' => 'scanr',
                 'class' => 'field-container',
                 // This attribute is required to make "batch edit all" working.
                 'data-collection-action' => 'replace',
             ])
 
             ->add([
-                'name' => 'mailing_merge_to_listmonk',
+                'name' => 'scanr_merge',
                 'type' => Element\Checkbox::class,
                 'options' => [
-                    'label' => 'Merge item data to Listmonk subscribers', // @translate
+                    'label' => 'Merge item data with Scanr first response', // @translate
                 ],
                 'attributes' => [
-                    'id' => 'mailing_merge_to_listmonk',
+                    'id' => 'scanr_merge',
                     // This attribute is required to make "batch edit all" working.
                     'data-collection-action' => 'replace',
                 ],

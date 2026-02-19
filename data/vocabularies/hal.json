@@ -1,0 +1,20 @@
+{
+    "vocabulary": {
+        "o:namespace_uri": "https://data.hal.science/doc/schema#",
+        "o:prefix": "hal",
+        "o:label": "HAL",
+        "o:comment": "Generic and common properties that are useful in Omeka for HAL publications."
+    },
+    "strategy": "file",
+    "options": {
+        "file": "hal.ttl",
+        "format": "turtle"
+    },
+    "update": {
+        "namespace_uri": "https://data.hal.science/doc/schema#",
+        "properties": {
+            "newResource": "new",
+            "reservedAccess": "reserved"
+        }
+    }
+}
