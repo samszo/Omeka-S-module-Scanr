@@ -90,6 +90,15 @@ return [
                                     ],
                                 ],
                             ],
+                            'associer' => [
+                                'type' => 'Literal',
+                                'options' => [
+                                    'route' => '/associer',
+                                    'defaults' => [
+                                        'action' => 'associer',
+                                    ],
+                                ],
+                            ],
                         ],
                     ],
                 ],

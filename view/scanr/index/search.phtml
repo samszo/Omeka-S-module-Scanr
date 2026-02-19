@@ -30,6 +30,7 @@ $this->headTitle($this->translate('Scanr - Recherche de personnes'));
                     <tr>
                         <th><?php echo $this->translate('Nom'); ?></th>
                         <th><?php echo $this->translate('Prénom'); ?></th>
+                        <th><?php echo $this->translate('Item'); ?></th>
                         <th><?php echo $this->translate('Affiliations'); ?></th>
                         <th><?php echo $this->translate('Domaines'); ?></th>
                         <th><?php echo $this->translate('Actions'); ?></th>
@@ -42,9 +43,22 @@ $this->headTitle($this->translate('Scanr - Recherche de personnes'));
                             <td><?php echo $this->escapeHtml($person['firstName']); ?></td>
                             <td>
                                 <?php
+                                if (!empty($person['items'])) {
+                                    $items = array_map(function($it) {
+                                        return $it->link($it->displayTitle());
+                                    }, array_slice($person['items'], 0, 2));
+                                    echo implode(', ', array_filter($items));
+                                    if (count($person['items']) > 2) {
+                                        echo ' ...';
+                                    }
+                                }
+                                ?>
+                            </td>
+                            <td>
+                                <?php
                                 if (!empty($person['affiliations'])) {
                                     $affiliationNames = array_map(function($aff) {
-                                        return $aff['structure']['label'] ?? '';
+                                        return $aff['structure']['label']['default'] ?? '';
                                     }, array_slice($person['affiliations'], 0, 2));
                                     echo $this->escapeHtml(implode(', ', array_filter($affiliationNames)));
                                     if (count($person['affiliations']) > 2) {
@@ -57,8 +71,8 @@ $this->headTitle($this->translate('Scanr - Recherche de personnes'));
                                 <?php
                                 if (!empty($person['domains'])) {
                                     $domainLabels = array_map(function($domain) {
-                                        return $domain['label'] ?? '';
-                                    }, array_slice($person['domains'], 0, 2));
+                                        return $domain['label']['default'] ?? '';
+                                    }, array_slice($person['domains'], 0, 10));
                                     echo $this->escapeHtml(implode(', ', array_filter($domainLabels)));
                                     if (count($person['domains']) > 2) {
                                         echo ' ...';
@@ -67,12 +81,22 @@ $this->headTitle($this->translate('Scanr - Recherche de personnes'));
                                 ?>
                             </td>
                             <td>
-                                <form method="post" action="<?php echo $this->url('admin/scanr/import'); ?>" style="display: inline;">
-                                    <input type="hidden" name="person_id" value="<?php echo $this->escapeHtml($person['id']); ?>">
-                                    <button type="submit" class="button" onclick="return confirm('<?php echo $this->translate('Importer cette personne ?'); ?>');">
-                                        <?php echo $this->translate('Importer'); ?>
-                                    </button>
-                                </form>
+                                <?php if (count($person['items'])): ?>
+                                    <form method="post" action="<?php echo $this->url('admin/scanr/associer'); ?>" style="display: inline;">
+                                        <input type="hidden" name="person_id" value="<?php echo $this->escapeHtml($person['id']); ?>">
+                                        <input type="hidden" name="item_id" value="<?php echo $this->escapeHtml($person['items'][0]->id()); ?>">
+                                        <button type="submit" class="button" onclick="return confirm('<?php echo $this->translate('Associer cette personne ?'); ?>');">
+                                            <?php echo $this->translate('Associer'); ?>
+                                        </button>
+                                    </form>
+                                <?php else: ?>
+                                    <form method="post" action="<?php echo $this->url('admin/scanr/import'); ?>" style="display: inline;">
+                                        <input type="hidden" name="person_id" value="<?php echo $this->escapeHtml($person['id']); ?>">
+                                        <button type="submit" class="button" onclick="return confirm('<?php echo $this->translate('Importer cette personne ?'); ?>');">
+                                            <?php echo $this->translate('Importer'); ?>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
