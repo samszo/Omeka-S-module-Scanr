@@ -348,7 +348,7 @@ class ApiClient
                         $e->getMessage())
                     );
 
-                    throw new \Exception('Error querying scanR API: ' . $e->getMessage());
+                    //throw new \Exception('Error querying scanR API: ' . $e->getMessage());
                 }
             }
         }
