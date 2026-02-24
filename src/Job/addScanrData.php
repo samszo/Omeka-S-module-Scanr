@@ -132,7 +132,7 @@ class addScanrData extends AbstractJob
 
         $logger->info(new Message(
             'End of the job: %1$d/%2$d processed.', // @translate
-            $totalProcessed, $totalToProcess
+            $process, $totalToProcess
         ));
     }
 }

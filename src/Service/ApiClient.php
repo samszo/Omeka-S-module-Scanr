@@ -345,7 +345,7 @@ class ApiClient
                     ];
                 } catch (\Exception $e) {
                     $this->logger->warn(new Message(
-                        $e->getMessage())
+                        $e->getMessage()." : ".$co['fullname']." ".$co['person'])
                     );
 
                     //throw new \Exception('Error querying scanR API: ' . $e->getMessage());
