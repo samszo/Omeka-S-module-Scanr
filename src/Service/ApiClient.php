@@ -125,6 +125,10 @@ class ApiClient
                 ]
             ]
         ];
+        $this->logger->info(
+            '{person} scanr match.', // @translate
+            ['person' => $personId, 'referenceId' => 'Scanr - getPersonById']
+        );
 
         try {
             $response = $this->client->search($params);        
@@ -294,10 +298,10 @@ class ApiClient
 
         // Nom
         if (!empty($personData['lastName'])) {
-            if(!isset($itemData['foaf:lastName'])){
+            if(!isset($itemData['foaf:familyName'])){
                 $itemData['foaf:lastName'][] = [
                     'type' => 'literal',
-                    'property_id' => $this->getProperty('foaf:lastName')->id()."", 
+                    'property_id' => $this->getProperty('foaf:familyName')->id()."", 
                     '@value' => $personData['lastName'],
                 ];
             }
@@ -338,6 +342,11 @@ class ApiClient
                     }else{
                         $itemCo = $scanrCo['items'][0];
                     }
+                    $this->logger->info(
+                        '{id} {person} scanr contributor find.', // @translate
+                        ['id' => $itemCo->id(),'person' => $itemCo->displaytitle(), 'referenceId' => 'Scanr']
+                    );
+                    
                     $itemData['bibo:contributorList'][] = [
                         'property_id' => $this->getProperty('bibo:contributorList')->id()."",
                         'value_resource_id' => $itemCo->id(),
