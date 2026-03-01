@@ -81,6 +81,8 @@ class IndexController extends AbstractActionController
 
     public function importAction()
     {
+        set_time_limit(60);
+
         if (!$this->getRequest()->isPost()) {
             throw new NotFoundException();
         }
@@ -118,6 +120,8 @@ class IndexController extends AbstractActionController
 
     public function associerAction()
     {
+        set_time_limit(60);
+
         if (!$this->getRequest()->isPost()) {
             throw new NotFoundException();
         }

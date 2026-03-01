@@ -354,7 +354,9 @@ class ApiClient
                     ];
                 } catch (\Exception $e) {
                     $this->logger->warn(new Message(
-                        $e->getMessage()." : ".$co['fullname']." ".$co['person'])
+                        $e->getMessage()." : ".
+                            isset($co['fullname']) ? $co['fullname']:"no"
+                            ." ".$co['person'])
                     );
 
                     //throw new \Exception('Error querying scanR API: ' . $e->getMessage());
@@ -542,7 +544,9 @@ class ApiClient
 
     function getTypeFromOrga($orga){
         if(substr($orga["structure"]["id"],0,2)=="ED")return "Ecole doctorale";
-        else return $orga["structure"]["king"][0];
+        else{
+            return isset($orga["structure"]["kind"]) ? $orga["structure"]["kind"][0] : "no";
+        } 
     }
 
 
