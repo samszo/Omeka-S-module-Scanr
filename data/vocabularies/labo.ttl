@@ -91,3 +91,13 @@ labo:hasOrga a rdf:Property ;
     rdfs:label "A comme organisation" ;
     rdfs:domain o:Resource ;
     vs:term_status "experimental" .
+
+labo:ScienceEvent a rdfs:Class ;
+    rdfs:label "Evènement scientifique" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
+
+labo:EventActor a rdf:Property ;
+    rdfs:label "Participe à l'événement" ;
+    rdfs:domain o:Resource ;
+    vs:term_status "experimental" .
