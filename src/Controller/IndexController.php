@@ -59,7 +59,7 @@ class IndexController extends AbstractActionController
         $formData = $this->searchForm->getData();
         $query = $formData['query'] ?? '';
         $page = (int) ($this->params()->fromQuery('page', 1)) - 1;
-        $size = 20;
+        $size = 3;
 
         try {
             $results = $this->apiClient->searchPersons($query, $page, $size);
