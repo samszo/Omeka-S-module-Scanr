@@ -425,8 +425,24 @@ class ApiClient
         // Publications
         if ($addCoContrib && !empty($personData['publications'])) {
             $itemData['foaf:publications']=[];
+            /*ATTENTION à la création de doublon
+            pour les éliminer
+            DELETE a
+            FROM
+                value AS a,
+                value AS b
+            WHERE
+                a.id < b.id
+                AND a.property_id = 165 
+                AND b.property_id = 165
+                -- Any duplicates you want to check for
+                AND a.resource_id = b.resource_id
+                AND a.value = b.value;            
+            */
+            $doublonsPubli = [];
             foreach ($personData['publications'] as $publi) {
-                if (isset($publi['title'])) {
+                if (isset($publi['title']) && !isset($doublonsPubli[$publi['title']])) {
+                    $doublonsPubli[$publi['title']]=1;
                     $annotation = [];
                     $annotation['dcterms:date'][] = [
                         'property_id' => $this->getProperty('dcterms:date')->id()."",
