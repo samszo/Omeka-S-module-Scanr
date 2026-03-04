@@ -370,7 +370,7 @@ class ApiClient
             $itemData['dcterms:subject']=[];
             foreach ($personData['domains'] as $domain) {
                 if (isset($domain['label'])) {
-                    $concept = $this->getTag($domain);
+                    $concept = $this->getConcept($domain);
 
                     $annotation = [];
                     $annotation['curation:rank'][] = [
@@ -479,7 +479,7 @@ class ApiClient
      * @param array $tag
      * @return o:Item
      */
-    protected function getTag($tag)
+    protected function getConcept($tag)
     {
         // Vérifie la présence de l'item pour gérer la création
         $param = [];
