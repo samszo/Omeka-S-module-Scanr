@@ -8,6 +8,79 @@ Ce module permet d'interroger l'API scanR du Ministère de l'Enseignement Supér
 
 scanR est une plateforme qui recense les acteurs de la recherche et de l'innovation en France, incluant des informations sur les chercheurs, leurs affiliations, domaines de recherche, publications et distinctions.
 
+## Architecture
+
+### Composants du module
+
+```mermaid
+graph TB
+    subgraph "Interface Utilisateur"
+        UI[Vue Omeka S]
+        SearchForm[Formulaire de recherche]
+        ConfigForm[Formulaire de configuration]
+    end
+    
+    subgraph "Contrôleur"
+        Controller[IndexController]
+    end
+    
+    subgraph "Services"
+        ApiClient[ApiClient<br/>Client Elasticsearch]
+    end
+    
+    subgraph "API Externe"
+        ScanrAPI[API scanR<br/>Elasticsearch]
+    end
+    
+    subgraph "Stockage Omeka S"
+        OmekaAPI[API Omeka S]
+        Items[Items Omeka<br/>Personnes importées]
+    end
+    
+    UI --> SearchForm
+    UI --> ConfigForm
+    SearchForm --> Controller
+    Controller --> ApiClient
+    ApiClient --> ScanrAPI
+    Controller --> OmekaAPI
+    OmekaAPI --> Items
+    
+    style UI fill:#e1f5ff
+    style Controller fill:#fff4e1
+    style ApiClient fill:#ffe1f5
+    style ScanrAPI fill:#e1ffe1
+    style OmekaAPI fill:#f5e1ff
+```
+
+### Flux de travail
+
+```mermaid
+sequenceDiagram
+    participant User as Utilisateur
+    participant Form as SearchForm
+    participant Ctrl as IndexController
+    participant API as ApiClient
+    participant Scanr as API scanR
+    participant Omeka as API Omeka S
+    
+    User->>Form: Saisit un nom/prénom
+    Form->>Ctrl: Soumet la recherche
+    Ctrl->>API: searchPersons(query)
+    API->>Scanr: Requête Elasticsearch
+    Scanr-->>API: Résultats JSON
+    API-->>Ctrl: Données formatées
+    Ctrl-->>User: Affiche les résultats
+    
+    User->>Ctrl: Clique sur "Importer"
+    Ctrl->>API: getPersonDetails(id)
+    API->>Scanr: Récupère détails complets
+    Scanr-->>API: Données personne
+    API-->>Ctrl: Métadonnées formatées
+    Ctrl->>Omeka: create(item, metadata)
+    Omeka-->>Ctrl: Item créé
+    Ctrl-->>User: Confirmation import
+```
+
 ## Fonctionnalités
 
 - **Recherche de personnes** : Recherche par nom, prénom, affiliation ou domaine de recherche
@@ -62,6 +135,51 @@ Les données importées depuis scanR incluent :
 - **Domaines de recherche** : Thématiques scientifiques
 - **Publications** : Liste des publications (si disponible)
 - **Distinctions** : Prix et récompenses (si disponible)
+
+### Mapping des métadonnées
+
+```mermaid
+graph LR
+    subgraph "Données scanR"
+        ScanrID[id]
+        ScanrFullName[fullName]
+        ScanrFirstName[firstName]
+        ScanrLastName[lastName]
+        ScanrAffiliations[affiliations]
+        ScanrDomains[domains]
+        ScanrPublications[publications]
+        ScanrAwards[awards]
+    end
+    
+    subgraph "Item Omeka S"
+        Title[dcterms:title]
+        ID[dcterms:identifier]
+        FirstName[foaf:firstName]
+        LastName[foaf:lastName]
+        Desc[dcterms:description]
+        Subject[dcterms:subject]
+    end
+    
+    ScanrFullName --> Title
+    ScanrID --> ID
+    ScanrFirstName --> FirstName
+    ScanrLastName --> LastName
+    ScanrAffiliations --> Desc
+    ScanrDomains --> Subject
+    
+    style ScanrID fill:#e1ffe1
+    style ScanrFullName fill:#e1ffe1
+    style ScanrFirstName fill:#e1ffe1
+    style ScanrLastName fill:#e1ffe1
+    style ScanrAffiliations fill:#e1ffe1
+    style ScanrDomains fill:#e1ffe1
+    style Title fill:#e1f5ff
+    style ID fill:#e1f5ff
+    style FirstName fill:#e1f5ff
+    style LastName fill:#e1f5ff
+    style Desc fill:#e1f5ff
+    style Subject fill:#e1f5ff
+```
 
 ## API scanR
 
