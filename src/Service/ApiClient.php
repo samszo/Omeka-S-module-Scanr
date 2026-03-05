@@ -54,7 +54,22 @@ class ApiClient
      * @var $logger
      */
     protected $logger;
-
+    /**
+     * @var $propFind
+     */
+    protected $propFind;
+    /**
+     * @var $classPerson
+     */
+    protected $classPerson;
+    /**
+     * @var $classPerson
+     */
+    protected $propHasStructure;
+    /**
+     * @var $classStructure
+     */
+    protected $classStructure;
 
     public function __construct(Settings $settings, $api, $logger)
     {
@@ -65,6 +80,11 @@ class ApiClient
         $this->apiUrl = $settings->get('scanr_url', 'https://scanr-api.enseignementsup-recherche.gouv.fr');
         $this->user = $settings->get('scanr_username');
         $this->pwd = $settings->get('scanr_pwd');
+        $this->propFind = $settings->get('scanr_properties_fullName')[0];
+        $this->classPerson = $settings->get('scanr_class_person')[0];
+        $this->classStructure = $settings->get('scanr_class_structure')[0];
+        $this->propHasStructure = $settings->get('scanr_properties_hasStructure')[0];
+
         if(!isset($this->user) || !isset($this->pwd)) throw new \Exception("Error querying scanR API: Veuillez saisir le nom de l'utilisateur et les mot de passe dans les paramètres du module");
         $this->testConnection();
     }
@@ -178,7 +198,7 @@ class ApiClient
         $results = [
             'id' => $source['id'] ?? '',
             'score' => $hit['_score'] ?? 0,
-            'items' => $this->referenceSearchResults($source,'labo:EnseigantChercheur'),
+            'items' => $this->referenceSearchResults($source,$this->classPerson),
             'firstName' => $source['firstName'] ?? '',
             'lastName' => $source['lastName'] ?? '',
             'fullName' => $source['fullName'] ?? '',
@@ -206,16 +226,28 @@ class ApiClient
     {
         $param = [];
         switch ($class) {
-            case 'labo:EnseigantChercheur':
-                $param['property'][0]['property'] = (string) $this->getProperty('foaf:familyName')->id();
+            case $this->classPerson:
+                $param['property'][0]['property'] = (string) $this->getProperty($this->propFind)->id();
                 $param['property'][0]['type'] = 'eq';
-                $param['property'][0]['text'] = $data['lastName'] ?? '';
-                $param['property'][1]['property'] = (string) $this->getProperty('foaf:firstName')->id();
-                $param['property'][1]['type'] = 'eq';
-                $param['property'][1]['text'] = $data['firstName'] ?? '';
+                $param['property'][0]['text'] = $data['fullName'] ?? '';
                 break;            
         }
+        $this->logger->info(
+            'Cherche :{person}.', // @translate
+            ['person' => $data['firstName']." ".$data['lastName'], 'referenceId' => 'Scanr - referenceSearchResults']
+        );
         $items = $this->apiOmk->search('items', $param)->getContent();
+        /*
+        $this->logger->info(
+            'Cherche un :{person}.', // @translate
+            ['person' => $data['firstName']." ".$data['lastName'], 'referenceId' => 'Scanr - referenceSearchResults']
+        );
+        $items = $this->apiOmk->searchOne('items', $param, ['returnScalar' => 'id'])->getContent();
+        */
+        $this->logger->info(
+            'Trouve :{nb}.', // @translate
+            ['nb' => count($items), 'referenceId' => 'Scanr - referenceSearchResults']
+        );
         
         return $items;
     }
@@ -368,33 +400,47 @@ class ApiClient
         // Description avec les domaines
         if ($addCoContrib && !empty($personData['domains'])) {
             $itemData['dcterms:subject']=[];
+            $concepts = [];
+            //construction du rank
             foreach ($personData['domains'] as $domain) {
                 if (isset($domain['label'])) {
-                    $concept = $this->getConcept($domain);
-
-                    $annotation = [];
-                    $annotation['curation:rank'][] = [
-                        'property_id' => $this->getProperty('curation:rank')->id()."",
-                        '@value' => $domain["count"]."",
-                        'type' => 'literal',
-                    ];
-
-                    $itemData['dcterms:subject'][] = [
-                        'property_id' => $this->getProperty('dcterms:subject')->id()."",
-                        'value_resource_id' => $concept->id(),
-                        'type' => 'resource',
-                        '@annotation' => $annotation,
-                    ];
+                    $key = $domain["type"]!="keyword" ? $domain["type"].$domain["code"] : $domain['label']["default"];
+                    if(isset($concepts[$key]))$concepts[$key]["count"]+=$domain["count"];
+                    else $concepts[$key] = $domain;
                 }
+            }
+
+
+            //ordonne sur le rank
+            usort($concepts, function($a, $b) {
+                return $b["count"] - $a["count"];
+            });
+
+            //création des concepts
+            foreach ($concepts as $concept) {
+                $idConcept = $this->getConcept($concept);
+                $annotation = [];
+                $annotation['curation:rank'][] = [
+                    'property_id' => $this->getProperty('curation:rank')->id()."",
+                    '@value' => $concept["count"]."",
+                    'type' => 'literal',
+                ];
+
+                $itemData['dcterms:subject'][] = [
+                    'property_id' => $this->getProperty('dcterms:subject')->id()."",
+                    'value_resource_id' => $idConcept,
+                    'type' => 'resource',
+                    '@annotation' => $annotation,
+                ];
             }
         }
 
         // Affiliations
         if (!empty($personData['affiliations'])) {
-            $itemData['labo:hasOrga']=[];
+            $itemData[$this->propHasStructure]=[];
             foreach ($personData['affiliations'] as $affiliation) {
                 if (isset($affiliation['structure']['label'])) {
-                    $orga = $this->getOrga($affiliation);
+                    $idOrga = $this->getOrga($affiliation);
                     $annotation = [];
                     $annotation['curation:rank'][] = [
                         'property_id' => $this->getProperty('curation:rank')->id()."",
@@ -411,9 +457,9 @@ class ApiClient
                         '@value' => $affiliation["endDate"],
                         'type' => 'literal',
                     ];
-                    $itemData['labo:hasOrga'][] = [
-                        'property_id' => $this->getProperty('labo:hasOrga')->id()."",
-                        'value_resource_id' => $orga->id(),
+                    $itemData[$this->propHasStructure][] = [
+                        'property_id' => $this->getProperty($this->propHasStructure)->id()."",
+                        'value_resource_id' => $idOrga,
                         'type' => 'resource',
                         '@annotation' => $annotation,
                     ];
@@ -439,33 +485,43 @@ class ApiClient
                 AND a.resource_id = b.resource_id
                 AND a.value = b.value;            
             */
-            $doublonsPubli = [];
+            $publis = [];
+            //construction des status
             foreach ($personData['publications'] as $publi) {
-                if (isset($publi['title']) && !isset($doublonsPubli[$publi['title']])) {
-                    $doublonsPubli[$publi['title']]=1;
-                    $annotation = [];
-                    $annotation['dcterms:date'][] = [
-                        'property_id' => $this->getProperty('dcterms:date')->id()."",
-                        '@value' => $publi["year"] ?? "",
-                        'type' => 'literal',//mettre un type date
-                    ];
-                    $annotation['dcterms:isReferencedBy'][] = [
-                        'property_id' => $this->getProperty('dcterms:isReferencedBy')->id()."",
-                        '@value' => $publi["publication"],
-                        'type' => 'literal',//mettre un type date
-                    ];
+                if (isset($publi['title']["default"])) {
+                    if(!isset($publis[$publi["publication"]])){
+                        $publis[$publi["publication"]]=$publi;
+                        $publis[$publi["publication"]]["status"]=[];
+                    }
+                    $publis[$publi["publication"]]["status"][]=$publi["role"];
+                }
+            }
+
+            foreach ($publis as $publi) {
+                $annotation = [];
+                $annotation['dcterms:date'][] = [
+                    'property_id' => $this->getProperty('dcterms:date')->id()."",
+                    '@value' => $publi["year"] ?? "",
+                    'type' => 'literal',//mettre un type date
+                ];
+                $annotation['dcterms:isReferencedBy'][] = [
+                    'property_id' => $this->getProperty('dcterms:isReferencedBy')->id()."",
+                    '@value' => $publi["publication"],
+                    'type' => 'literal',//mettre un type date
+                ];
+                foreach ($publi["status"] as $role) {
                     $annotation['foaf:status'][] = [
                         'property_id' => $this->getProperty('foaf:status')->id()."",
-                        '@value' => $publi["role"],
+                        '@value' => $role,
                         'type' => 'literal',//mettre un type date
                     ];
-                    $itemData['foaf:publications'][] = [
-                        'type' => 'literal',
-                        'property_id' => $this->getProperty('foaf:publications')->id()."",
-                        '@value' => $publi['title']["default"],
-                        '@annotation' => $annotation,
-                    ];
                 }
+                $itemData['foaf:publications'][] = [
+                    'type' => 'literal',
+                    'property_id' => $this->getProperty('foaf:publications')->id()."",
+                    '@value' => $publi['title']["default"],
+                    '@annotation' => $annotation,
+                ];
             }
         }
 
@@ -481,14 +537,24 @@ class ApiClient
      */
     protected function getConcept($tag)
     {
-        // Vérifie la présence de l'item pour gérer la création
+        // Vérifie la présence de l'item pour gérer la création        
         $param = [];
-        $param['property'][0]['property'] = $this->getProperty("skos:prefLabel")->id() . "";
-        $param['property'][0]['type'] = 'eq';
-        $param['property'][0]['text'] = $tag["label"]["default"];
-        $result = $this->apiOmk->search('items', $param)->getContent();
+        if($tag["type"]=="wikidata"){
+            $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
+            $param['property'][0]['type'] = 'eq';
+            $param['property'][0]['text'] = "https://www.wikidata.org/wiki/".$tag["code"];
+        } elseif (isset($tag["code"]) && isset($tag["type"])){
+            $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
+            $param['property'][0]['type'] = 'eq';
+            $param['property'][0]['text'] = $tag["type"]."_".$tag["code"];
+        }else{
+            $param['property'][0]['property'] = $this->getProperty("skos:prefLabel")->id() . "";
+            $param['property'][0]['type'] = 'eq';
+            $param['property'][0]['text'] = $tag["label"]["default"];
+        }
+        $result = $this->apiOmk->search('items', $param, ['returnScalar' => 'id'])->getContent();
         if (count($result)) {
-            return $result[0];
+            return array_key_first($result);
         } else {
             $oItem = [];
             $class = $this->getRc('skos:Concept');
@@ -510,10 +576,17 @@ class ApiClient
                 $valueObject['o:label'] = 'wikidata';
                 $valueObject['type'] = 'uri';
                 $oItem["dcterms:isReferencedBy"][] = $valueObject;
+            }
+            if (isset($tag["code"]) && isset($tag["type"])) {
+                $valueObject = [];
+                $valueObject['property_id'] = $this->getProperty("dcterms:isReferencedBy")->id();
+                $valueObject['@value'] = $tag["type"]."_".$tag["code"];
+                $valueObject['type'] = 'literal';
+                $oItem["dcterms:isReferencedBy"][] = $valueObject;
             }            
             // Création du tag
             $cpt = $this->apiOmk->create('items', $oItem, [], ['continueOnError' => true])->getContent();
-            return $cpt;
+            return $cpt->id();
         }
     }
 
@@ -530,12 +603,12 @@ class ApiClient
         $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
         $param['property'][0]['type'] = 'eq';
         $param['property'][0]['text'] = $orga["structure"]["id_name"];
-        $result = $this->apiOmk->search('items', $param)->getContent();
+        $result = $this->apiOmk->search('items', $param, ['returnScalar' => 'id'])->getContent();
         if (count($result)) {
-            return $result[0];
+            return array_key_first($result);
         } else {
             $oItem = [];
-            $class = $this->getRc('labo:Organisme');
+            $class = $this->getRc($this->classStructure);
             $oItem['o:resource_class'] = ['o:id' => $class->id()];
             $valueObject = [];
             $valueObject['property_id'] = $this->getProperty("dcterms:title")->id();
@@ -554,7 +627,7 @@ class ApiClient
             $oItem["dcterms:isReferencedBy"][] = $valueObject;
             // Création du tag
             $cpt = $this->apiOmk->create('items', $oItem, [], ['continueOnError' => true])->getContent();
-            return $cpt;
+            return $cpt->id();
         }
     }
 

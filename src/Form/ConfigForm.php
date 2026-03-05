@@ -67,6 +67,59 @@ class ConfigForm extends Form
                     'required' => true
                 ],
             ])
+            ->add([
+                'name' => 'scanr_class_person',
+                'type' => CommonElement\OptionalResourceClassSelect::class,
+                'options' => [
+                    'element_group' => 'editing',
+                    'label' => 'Choose Class of the person', // @translate
+                    'query' => ['used' => true],
+                    'empty_option' => '',
+                    'term_as_value' => true,
+                ],
+                'attributes' => [
+                    'id' => 'scanr_class_person',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select resource classe…', // @translate'
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_class_structure',
+                'type' => CommonElement\OptionalResourceClassSelect::class,
+                'options' => [
+                    'element_group' => 'editing',
+                    'label' => 'Choose Class for the structure', // @translate
+                    'query' => ['used' => true],
+                    'empty_option' => '',
+                    'term_as_value' => true,
+                ],
+                'attributes' => [
+                    'id' => 'scanr_class_structure',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select resource classe…', // @translate'
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_properties_hasStructure',
+                'type' => CommonElement\OptionalPropertySelect::class,
+                'options' => [
+                    'element_group' => 'metadata_display',
+                    'label' => 'Properties for relation between person and structure', // @translate
+                    'term_as_value' => true,
+                    'prepend_value_options' => [
+                        'all' => 'All properties', // @translate
+                    ],
+                ],
+                'attributes' => [
+                    'id' => 'scanr_properties_hasStructure',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select properties…', // @translate
+                    'required' => true
+                ],
+            ])
         ;
 
     }

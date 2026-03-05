@@ -46,6 +46,9 @@ return [
             'scanr_username' => "",
             'scanr_pwd' => "",
             'scanr_properties_fullName' => ["foaf:accountName"],
+            'scanr_class_person' => ["foaf:Person"],
+            'scanr_class_structure' => ["foaf:Organization"],
+            'scanr_properties_hasStructure' => ["foaf:member"],
         ],
     ],
 
