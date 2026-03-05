@@ -491,9 +491,8 @@ class ApiClient
                 if (isset($publi['title']["default"])) {
                     if(!isset($publis[$publi["publication"]])){
                         $publis[$publi["publication"]]=$publi;
-                        $publis[$publi["publication"]]["status"]=[];
-                    }
-                    $publis[$publi["publication"]]["status"][]=$publi["role"];
+                        $publis[$publi["publication"]]["status"]=[$publi["role"]];
+                    }elseif(!in_array($publi["role"],$publis[$publi["publication"]]["status"]))$publis[$publi["publication"]]["status"][]=$publi["role"];
                 }
             }
 
@@ -513,7 +512,7 @@ class ApiClient
                     $annotation['foaf:status'][] = [
                         'property_id' => $this->getProperty('foaf:status')->id()."",
                         '@value' => $role,
-                        'type' => 'literal',//mettre un type date
+                        'type' => 'literal',
                     ];
                 }
                 $itemData['foaf:publications'][] = [
