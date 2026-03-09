@@ -49,6 +49,9 @@ return [
             'scanr_class_person' => ["foaf:Person"],
             'scanr_class_structure' => ["foaf:Organization"],
             'scanr_properties_hasStructure' => ["foaf:member"],
+            'scanr_class_concept' => ["skos:concept"],
+            'scanr_properties_conceptLabel' => ["skos:prefLabel"],
+            'scanr_properties_hasConcept' => ["dcterms:subject"],
         ],
     ],
 

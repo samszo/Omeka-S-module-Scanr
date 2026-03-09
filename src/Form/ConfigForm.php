@@ -73,7 +73,7 @@ class ConfigForm extends Form
                 'options' => [
                     'element_group' => 'editing',
                     'label' => 'Choose Class of the person', // @translate
-                    'query' => ['used' => true],
+                    'query' => ['used' => false],
                     'empty_option' => '',
                     'term_as_value' => true,
                 ],
@@ -90,7 +90,7 @@ class ConfigForm extends Form
                 'options' => [
                     'element_group' => 'editing',
                     'label' => 'Choose Class for the structure', // @translate
-                    'query' => ['used' => true],
+                    'query' => ['used' => false],
                     'empty_option' => '',
                     'term_as_value' => true,
                 ],
@@ -114,6 +114,61 @@ class ConfigForm extends Form
                 ],
                 'attributes' => [
                     'id' => 'scanr_properties_hasStructure',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select properties…', // @translate
+                    'required' => true
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_class_concept',
+                'type' => CommonElement\OptionalResourceClassSelect::class,
+                'options' => [
+                    'element_group' => 'editing',
+                    'label' => 'Choose Class for the concept', // @translate
+                    'query' => ['used' => false],
+                    'empty_option' => '',
+                    'term_as_value' => true,
+                ],
+                'attributes' => [
+                    'id' => 'scanr_class_concept',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select resource classe…', // @translate'
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_properties_conceptLabel',
+                'type' => CommonElement\OptionalPropertySelect::class,
+                'options' => [
+                    'element_group' => 'metadata_display',
+                    'label' => 'Properties for concept label', // @translate
+                    'term_as_value' => true,
+                    'prepend_value_options' => [
+                        'all' => 'All properties', // @translate
+                    ],
+                ],
+                'attributes' => [
+                    'id' => 'scanr_properties_conceptLabel',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select properties…', // @translate
+                    'required' => true
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_properties_hasConcept',
+                'type' => CommonElement\OptionalPropertySelect::class,
+                'options' => [
+                    'element_group' => 'metadata_display',
+                    'label' => 'Properties for relation between person and concept', // @translate
+                    'term_as_value' => true,
+                    'prepend_value_options' => [
+                        'all' => 'All properties', // @translate
+                    ],
+                ],
+                'attributes' => [
+                    'id' => 'scanr_properties_hasConcept',
                     'multiple' => true,
                     'class' => 'chosen-select',
                     'data-placeholder' => 'Select properties…', // @translate

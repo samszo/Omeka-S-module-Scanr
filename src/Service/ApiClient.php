@@ -70,6 +70,9 @@ class ApiClient
      * @var $classStructure
      */
     protected $classStructure;
+    protected $classConcept;
+    protected $propConceptLabel;
+    protected $propHasConcept;
 
     public function __construct(Settings $settings, $api, $logger)
     {
@@ -84,6 +87,9 @@ class ApiClient
         $this->classPerson = $settings->get('scanr_class_person')[0];
         $this->classStructure = $settings->get('scanr_class_structure')[0];
         $this->propHasStructure = $settings->get('scanr_properties_hasStructure')[0];
+        $this->classConcept = $settings->get('scanr_class_concept')[0];
+        $this->propConceptLabel = $settings->get('scanr_properties_conceptLabel')[0];
+        $this->propHasConcept = $settings->get('scanr_properties_hasConcept')[0];
 
         if(!isset($this->user) || !isset($this->pwd)) throw new \Exception("Error querying scanR API: Veuillez saisir le nom de l'utilisateur et les mot de passe dans les paramètres du module");
         $this->testConnection();
@@ -399,7 +405,7 @@ class ApiClient
         
         // Description avec les domaines
         if ($addCoContrib && !empty($personData['domains'])) {
-            $itemData['dcterms:subject']=[];
+            $itemData[$this->propHasConcept]=[];
             $concepts = [];
             //construction du rank
             foreach ($personData['domains'] as $domain) {
@@ -426,8 +432,8 @@ class ApiClient
                     'type' => 'literal',
                 ];
 
-                $itemData['dcterms:subject'][] = [
-                    'property_id' => $this->getProperty('dcterms:subject')->id()."",
+                $itemData[$this->propHasConcept][] = [
+                    'property_id' => $this->getProperty($this->propHasConcept)->id()."",
                     'value_resource_id' => $idConcept,
                     'type' => 'resource',
                     '@annotation' => $annotation,
@@ -547,7 +553,7 @@ class ApiClient
             $param['property'][0]['type'] = 'eq';
             $param['property'][0]['text'] = $tag["type"]."_".$tag["code"];
         }else{
-            $param['property'][0]['property'] = $this->getProperty("skos:prefLabel")->id() . "";
+            $param['property'][0]['property'] = $this->getProperty($this->propConceptLabel)->id() . "";
             $param['property'][0]['type'] = 'eq';
             $param['property'][0]['text'] = $tag["label"]["default"];
         }
@@ -556,7 +562,7 @@ class ApiClient
             return array_key_first($result);
         } else {
             $oItem = [];
-            $class = $this->getRc('skos:Concept');
+            $class = $this->getRc($this->classConcept);
             $oItem['o:resource_class'] = ['o:id' => $class->id()];
             $valueObject = [];
             $valueObject['property_id'] = $this->getProperty("dcterms:title")->id();
@@ -564,10 +570,10 @@ class ApiClient
             $valueObject['type'] = 'literal';
             $oItem["dcterms:title"][] = $valueObject;
             $valueObject = [];
-            $valueObject['property_id'] = $this->getProperty("skos:prefLabel")->id();
+            $valueObject['property_id'] = $this->getProperty($this->propConceptLabel)->id();
             $valueObject['@value'] = $tag["label"]["default"];
             $valueObject['type'] = 'literal';
-            $oItem["skos:prefLabel"][] = $valueObject;
+            $oItem[$this->propConceptLabel][] = $valueObject;
             if($tag["type"]=="wikidata"){
                 $valueObject = [];
                 $valueObject['property_id'] = $this->getProperty("dcterms:isReferencedBy")->id();
