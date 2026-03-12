@@ -28,6 +28,11 @@ class ApiClient
     protected $settings;
 
     /**
+     * @var connexion
+     */
+    protected $connection;
+
+    /**
      * @var $apiOmk
      */
     protected $apiOmk;
@@ -70,14 +75,11 @@ class ApiClient
      * @var $classStructure
      */
     protected $classStructure;
-    protected $classConcept;
-    protected $propConceptLabel;
-    protected $propHasConcept;
 
-    public function __construct(Settings $settings, $api, $logger)
+    public function __construct(Settings $settings, $api, $logger, $connection)
     {
-
-        $this->settings = $settings;
+        $this->connection = $connection;
+        $this->settings = $settings;    
         $this->apiOmk = $api;
         $this->logger = $logger;
         $this->apiUrl = $settings->get('scanr_url', 'https://scanr-api.enseignementsup-recherche.gouv.fr');
@@ -87,9 +89,6 @@ class ApiClient
         $this->classPerson = $settings->get('scanr_class_person')[0];
         $this->classStructure = $settings->get('scanr_class_structure')[0];
         $this->propHasStructure = $settings->get('scanr_properties_hasStructure')[0];
-        $this->classConcept = $settings->get('scanr_class_concept')[0];
-        $this->propConceptLabel = $settings->get('scanr_properties_conceptLabel')[0];
-        $this->propHasConcept = $settings->get('scanr_properties_hasConcept')[0];
 
         if(!isset($this->user) || !isset($this->pwd)) throw new \Exception("Error querying scanR API: Veuillez saisir le nom de l'utilisateur et les mot de passe dans les paramètres du module");
         $this->testConnection();
@@ -233,27 +232,27 @@ class ApiClient
         $param = [];
         switch ($class) {
             case $this->classPerson:
+                /*
                 $param['property'][0]['property'] = (string) $this->getProperty($this->propFind)->id();
                 $param['property'][0]['type'] = 'eq';
                 $param['property'][0]['text'] = $data['fullName'] ?? '';
+                */
+                $prop = $this->getProperty($this->propFind)->id(); 
+                $val = $data['fullName'];
+                $sql = <<<SQL
+                    select resource_id from value where property_id = $prop AND value = ?
+                SQL;
                 break;            
         }
-        $this->logger->info(
-            'Cherche :{person}.', // @translate
-            ['person' => $data['firstName']." ".$data['lastName'], 'referenceId' => 'Scanr - referenceSearchResults']
-        );
-        $items = $this->apiOmk->search('items', $param)->getContent();
-        /*
-        $this->logger->info(
-            'Cherche un :{person}.', // @translate
-            ['person' => $data['firstName']." ".$data['lastName'], 'referenceId' => 'Scanr - referenceSearchResults']
-        );
-        $items = $this->apiOmk->searchOne('items', $param, ['returnScalar' => 'id'])->getContent();
-        */
-        $this->logger->info(
-            'Trouve :{nb}.', // @translate
-            ['nb' => count($items), 'referenceId' => 'Scanr - referenceSearchResults']
-        );
+        $result = $this->connection->fetchAll($sql,[$val]);
+        if (count($result)) {
+            $id = $result[0]["resource_id"];
+            $items = [$this->apiOmk->read('items', $id)->getContent()];
+            $this->logger->info(
+                'Person find "{val}" = #{resource_id}.', // @translate
+                ['val' => $data['firstName']." ".$data['lastName'], 'resource_id' => $id, 'referenceId' => 'Scanr - referenceSearchResults']
+            );
+        } else $items=[];
         
         return $items;
     }
@@ -368,46 +367,16 @@ class ApiClient
             }
         }
 
-        // ajoute les coContributeurs
-        if ($addCoContrib && !empty($personData['coContributors'])) {
-            $itemData['bibo:contributorList']=[];
-            foreach ($personData['coContributors'] as $co) {
-                try {
-                    $scanrCo = $this->getPersonById($co['person']);
-                    if(count($scanrCo['items'])==0){
-                        $itemDataCo = $this->mapPersonToItem($scanrCo, false);            
-                        $itemCo = $this->apiOmk->create('items', $itemDataCo)->getContent();
-                    }else{
-                        $itemCo = $scanrCo['items'][0];
-                    }
-                    $this->logger->info(
-                        '{id} {person} scanr contributor find.', // @translate
-                        ['id' => $itemCo->id(),'person' => $itemCo->displaytitle(), 'referenceId' => 'Scanr']
-                    );
-                    
-                    $itemData['bibo:contributorList'][] = [
-                        'property_id' => $this->getProperty('bibo:contributorList')->id()."",
-                        'value_resource_id' => $itemCo->id(),
-                        'type' => 'resource'
-                    ];
-                } catch (\Exception $e) {
-                    $this->logger->warn(new Message(
-                        $e->getMessage()." : ".
-                            isset($co['fullname']) ? $co['fullname']:"no"
-                            ." ".$co['person'])
-                    );
 
-                    //throw new \Exception('Error querying scanR API: ' . $e->getMessage());
-                }
-            }
-        }
-
-        
         // Description avec les domaines
         if ($addCoContrib && !empty($personData['domains'])) {
-            $itemData[$this->propHasConcept]=[];
+            $itemData['dcterms:subject']=[];
             $concepts = [];
+
+
             //construction du rank
+            $nb = count($personData['domains']);
+            $this->logger->info(new Message("Get rank domains  = ".$nb));
             foreach ($personData['domains'] as $domain) {
                 if (isset($domain['label'])) {
                     $key = $domain["type"]!="keyword" ? $domain["type"].$domain["code"] : $domain['label']["default"];
@@ -416,13 +385,17 @@ class ApiClient
                 }
             }
 
-
+            $this->logger->info(new Message("Order domains"));
             //ordonne sur le rank
             usort($concepts, function($a, $b) {
                 return $b["count"] - $a["count"];
             });
 
             //création des concepts
+            $this->logger->info(new Message("Get Set domains"));
+            //$nb = 10;
+            //for ($i=0; $i < $nb; $i++) { 
+            //    $concept = $concepts[$i];
             foreach ($concepts as $concept) {
                 $idConcept = $this->getConcept($concept);
                 $annotation = [];
@@ -432,12 +405,46 @@ class ApiClient
                     'type' => 'literal',
                 ];
 
-                $itemData[$this->propHasConcept][] = [
-                    'property_id' => $this->getProperty($this->propHasConcept)->id()."",
+                $itemData['dcterms:subject'][] = [
+                    'property_id' => $this->getProperty('dcterms:subject')->id()."",
                     'value_resource_id' => $idConcept,
                     'type' => 'resource',
                     '@annotation' => $annotation,
                 ];
+            }
+        }
+
+        // ajoute les coContributeurs
+        $this->logger->info(new Message("Get Set coContributors"));
+        if ($addCoContrib && !empty($personData['coContributors'])) {
+            $itemData['bibo:contributorList']=[];
+            foreach ($personData['coContributors'] as $co) {
+                try {
+                    $scanrCo = $this->getPersonById($co['person']);
+                    if(count($scanrCo['items'])==0){
+                        $itemDataCo = $this->mapPersonToItem($scanrCo, false);            
+                        $itemCo = $this->apiOmk->create('items', $itemDataCo)->getContent();
+                        $this->logger->info(
+                            'Person create "{val}" = #{resource_id}.', // @translate
+                            ['val' => $itemCo->displayTitle(), 'resource_id' => $itemCo->id(), 'referenceId' => 'Scanr - mapPersonToItem']
+                        );
+
+                    }else{
+                        $itemCo = $scanrCo['items'][0];
+                    }                    
+                    $itemData['bibo:contributorList'][] = [
+                        'property_id' => $this->getProperty('bibo:contributorList')->id()."",
+                        'value_resource_id' => $itemCo->id(),
+                        'type' => 'resource'
+                    ];
+                } catch (\Exception $e) {
+                    $person = isset($co['fullname']) ? $co['fullname'] : "no"; 
+                    $person .= isset($co['person']) ? $co['person'] : "no";
+                    $this->logger->warn(new Message(
+                        $e->getMessage()." : ".$person)
+                    );
+                    //throw new \Exception('Error querying scanR API: ' . $e->getMessage());
+                }
             }
         }
 
@@ -544,25 +551,59 @@ class ApiClient
     {
         // Vérifie la présence de l'item pour gérer la création        
         $param = [];
-        if($tag["type"]=="wikidata"){
+        $val = $tag["label"]["default"];
+        if($tag["type"]=="wikidata"){   
+            /*         
             $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
             $param['property'][0]['type'] = 'eq';
             $param['property'][0]['text'] = "https://www.wikidata.org/wiki/".$tag["code"];
+            */
+            $prop = $this->getProperty("dcterms:isReferencedBy")->id(); 
+            $val = "https://www.wikidata.org/wiki/".$tag["code"];
+            $sql = <<<SQL
+                select resource_id from value where property_id = $prop AND uri = ?
+            SQL;
+            //
         } elseif (isset($tag["code"]) && isset($tag["type"])){
+            /*
             $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
             $param['property'][0]['type'] = 'eq';
             $param['property'][0]['text'] = $tag["type"]."_".$tag["code"];
+            */
+            $prop = $this->getProperty("dcterms:isReferencedBy")->id(); 
+            $val = $tag["type"]."_".$tag["code"];
+            $sql = <<<SQL
+                select resource_id from value where property_id = $prop AND value = ?
+            SQL;
+            //
         }else{
-            $param['property'][0]['property'] = $this->getProperty($this->propConceptLabel)->id() . "";
+            /*
+            $param['property'][0]['property'] = $this->getProperty("skos:prefLabel")->id() . "";
             $param['property'][0]['type'] = 'eq';
             $param['property'][0]['text'] = $tag["label"]["default"];
+            */
+            $prop = $this->getProperty("skos:prefLabel")->id(); 
+            $val = $tag["label"]["default"];
+            $sql = <<<SQL
+                select resource_id from value where property_id = $prop AND value = ?
+            SQL;
+            //
+
         }
-        $result = $this->apiOmk->search('items', $param, ['returnScalar' => 'id'])->getContent();
+        //$result = $this->apiOmk->search('items', $param, ['returnScalar' => 'id'])->getContent();
+
+        $result = $this->connection->fetchAll($sql,[$val]);
+
         if (count($result)) {
-            return array_key_first($result);
+            //$id = array_key_first($result);
+            $id = $result[0]["resource_id"];
+            $this->logger->info(
+                'Concept find "{val}" = #{resource_id}.', // @translate
+                ['val' => $val, 'resource_id' => $id]
+            );
         } else {
             $oItem = [];
-            $class = $this->getRc($this->classConcept);
+            $class = $this->getRc('skos:Concept');
             $oItem['o:resource_class'] = ['o:id' => $class->id()];
             $valueObject = [];
             $valueObject['property_id'] = $this->getProperty("dcterms:title")->id();
@@ -570,10 +611,10 @@ class ApiClient
             $valueObject['type'] = 'literal';
             $oItem["dcterms:title"][] = $valueObject;
             $valueObject = [];
-            $valueObject['property_id'] = $this->getProperty($this->propConceptLabel)->id();
+            $valueObject['property_id'] = $this->getProperty("skos:prefLabel")->id();
             $valueObject['@value'] = $tag["label"]["default"];
             $valueObject['type'] = 'literal';
-            $oItem[$this->propConceptLabel][] = $valueObject;
+            $oItem["skos:prefLabel"][] = $valueObject;
             if($tag["type"]=="wikidata"){
                 $valueObject = [];
                 $valueObject['property_id'] = $this->getProperty("dcterms:isReferencedBy")->id();
@@ -591,8 +632,14 @@ class ApiClient
             }            
             // Création du tag
             $cpt = $this->apiOmk->create('items', $oItem, [], ['continueOnError' => true])->getContent();
-            return $cpt->id();
+            $id = $cpt->id();
+            $this->logger->info(
+                'Concept create "{val}" = #{resource_id}.', // @translate
+                ['val' => $val, 'resource_id' => $id]
+            );
         }
+        return $id;
+
     }
 
     /**
@@ -605,12 +652,28 @@ class ApiClient
     {
         // Vérifie la présence de l'item pour gérer la création
         $param = [];
+        /*
         $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
         $param['property'][0]['type'] = 'eq';
         $param['property'][0]['text'] = $orga["structure"]["id_name"];
-        $result = $this->apiOmk->search('items', $param, ['returnScalar' => 'id'])->getContent();
+        */
+        $prop = $this->getProperty("dcterms:isReferencedBy")->id(); 
+        $val = $orga["structure"]["id_name"];
+        $sql = <<<SQL
+            select resource_id from value where property_id = $prop AND value = ?
+        SQL;
+
+
+        //$result = $this->apiOmk->search('items', $param, ['returnScalar' => 'id'])->getContent();
+        $result = $this->connection->fetchAll($sql,[$val]);
+
         if (count($result)) {
-            return array_key_first($result);
+            //$id = array_key_first($result);
+            $id = $result[0]["resource_id"];
+            $this->logger->info(
+                'Organisation find "{val}" = #{resource_id}.', // @translate
+                ['val' => $val, 'resource_id' => $id]
+            );
         } else {
             $oItem = [];
             $class = $this->getRc($this->classStructure);
@@ -632,8 +695,15 @@ class ApiClient
             $oItem["dcterms:isReferencedBy"][] = $valueObject;
             // Création du tag
             $cpt = $this->apiOmk->create('items', $oItem, [], ['continueOnError' => true])->getContent();
-            return $cpt->id();
+            $id = $cpt->id();
+            $this->logger->info(
+                'Organisation create "{val}" = #{resource_id}.', // @translate
+                ['val' => $val, 'resource_id' => $id]
+            );
+
+
         }
+        return $id;
     }
 
     function getTypeFromOrga($orga){

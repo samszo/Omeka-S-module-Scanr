@@ -11,7 +11,9 @@ class ApiClientFactory implements FactoryInterface
         $settings = $services->get('Omeka\Settings');
         $api = $services->get('Omeka\ApiManager');
         $logger = $services->get('Omeka\Logger');
+        $connection = $services->get('Omeka\Connection');
 
-        return new ApiClient($settings, $api, $logger);
+
+        return new ApiClient($settings, $api, $logger, $connection);
     }
 }
