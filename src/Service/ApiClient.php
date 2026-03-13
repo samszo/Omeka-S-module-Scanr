@@ -79,6 +79,7 @@ class ApiClient
      * @var $classPerson
      */
     protected $propHasStructure;
+    protected $propHasConcept;
     /**
      * @var $classStructure
      */
@@ -98,6 +99,7 @@ class ApiClient
         $this->classPerson = $settings->get('scanr_class_person')[0];
         $this->classStructure = $settings->get('scanr_class_structure')[0];
         $this->propHasStructure = $settings->get('scanr_properties_hasStructure')[0];
+        $this->propHasConcept = $settings->get('scanr_properties_hasConcept')[0];
         $this->templatePerson = $settings->get('scanr_template_person');
         $this->itemsetPerson = $settings->get('scanr_itemset_person');
 
@@ -381,15 +383,15 @@ class ApiClient
 
 
         // Description avec les domaines
-        if ($addCoContrib && !empty($personData['domains'])) {
-            $itemData['dcterms:subject']=[];
+        if ($addCoContrib && !empty($personData['top_domains'])) {
+            $itemData[$this->propHasConcept]=[];
             $concepts = [];
 
 
             //construction du rank
-            $nb = count($personData['domains']);
+            $nb = count($personData['top_domains']);
             $this->logger->info(new Message("Get rank domains  = ".$nb));
-            foreach ($personData['domains'] as $domain) {
+            foreach ($personData['top_domains'] as $domain) {
                 if (isset($domain['label'])) {
                     $key = $domain["type"]!="keyword" ? $domain["type"].$domain["code"] : $domain['label']["default"];
                     if(isset($concepts[$key]))$concepts[$key]["count"]+=$domain["count"];
@@ -417,8 +419,8 @@ class ApiClient
                     'type' => 'literal',
                 ];
 
-                $itemData['dcterms:subject'][] = [
-                    'property_id' => $this->getProperty('dcterms:subject')->id()."",
+                $itemData[$this->propHasConcept][] = [
+                    'property_id' => $this->getProperty($this->propHasConcept)->id()."",
                     'value_resource_id' => $idConcept,
                     'type' => 'resource',
                     '@annotation' => $annotation,
