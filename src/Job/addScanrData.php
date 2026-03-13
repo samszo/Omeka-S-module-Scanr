@@ -27,14 +27,10 @@ class addScanrData extends AbstractJob
         $entityManager = $services->get('Omeka\EntityManager');
         $ids = $this->getArg('ids');
 
-        /* Vérification amont des droits.
-        if (!$ids) {
-            $logger->warn(
-                'No item set to Transformers pipeline.' // @translate
-            );
-            return;
-        }
-        */
+        $logger->info(new Message(
+            'Start of the job : for %1$d items.', // @translate
+            count($ids)
+        ));
 
         // Check existence and rights.
         $itemIds = $api->search('items', ['id' => $ids], ['returnScalar' => 'id', 'per_page' => 10000])->getContent();
@@ -50,8 +46,7 @@ class addScanrData extends AbstractJob
         }
 
         $totalToProcess = count($itemIds);
-        $process = 0;
-
+        
         $logger->info(new Message(
             'Processing %d resources.', // @translate
             $totalToProcess
@@ -65,7 +60,7 @@ class addScanrData extends AbstractJob
         if(!$connect){
             $logger->warn(new Message('Unable to connect to scanR. Please check your configuration.'));
         }else{
-
+            $process = 0;
 
             foreach (array_chunk($itemIds, self::BULK_LIMIT) as $listItemIds) {
                     /** @var \Omeka\Api\Representation\AbstractRepresentation[] $resources */
@@ -108,7 +103,7 @@ class addScanrData extends AbstractJob
                             ['num' => $process, 'person' => $resource->displayTitle(), 'resource_id' => $resource->id(), 'referenceId' => 'Scanr']
                         );
                         unset($itemData);                    
-
+                        unset($personData);                    
                     }
 
                     ++$process;
