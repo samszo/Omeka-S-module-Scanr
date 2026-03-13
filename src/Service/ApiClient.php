@@ -28,9 +28,14 @@ class ApiClient
     protected $settings;
 
     /**
-     * @var connexion
+     * @var connection
      */
     protected $connection;
+
+    /**
+     * @var connection
+     */
+    protected $entityManager;
 
     /**
      * @var $apiOmk
@@ -67,6 +72,9 @@ class ApiClient
      * @var $classPerson
      */
     protected $classPerson;
+    protected $templatePerson;
+    protected $itemsetPerson;
+
     /**
      * @var $classPerson
      */
@@ -76,12 +84,13 @@ class ApiClient
      */
     protected $classStructure;
 
-    public function __construct(Settings $settings, $api, $logger, $connection)
+    public function __construct(Settings $settings, $api, $logger, $connection, $entityManager)
     {
         $this->connection = $connection;
         $this->settings = $settings;    
         $this->apiOmk = $api;
         $this->logger = $logger;
+        $this->entityManager = $entityManager; 
         $this->apiUrl = $settings->get('scanr_url', 'https://scanr-api.enseignementsup-recherche.gouv.fr');
         $this->user = $settings->get('scanr_username');
         $this->pwd = $settings->get('scanr_pwd');
@@ -89,6 +98,9 @@ class ApiClient
         $this->classPerson = $settings->get('scanr_class_person')[0];
         $this->classStructure = $settings->get('scanr_class_structure')[0];
         $this->propHasStructure = $settings->get('scanr_properties_hasStructure')[0];
+        $this->templatePerson = $settings->get('scanr_template_person');
+        $this->itemsetPerson = $settings->get('scanr_itemset_person');
+
 
         if(!isset($this->user) || !isset($this->pwd)) throw new \Exception("Error querying scanR API: Veuillez saisir le nom de l'utilisateur et les mot de passe dans les paramètres du module");
         $this->testConnection();
@@ -305,10 +317,10 @@ class ApiClient
             $itemData = json_decode(json_encode($personData["items"][0]), true);        
         }else{
             $itemData = [
-                'o:resource_class' => ['o:id' => 107], //TODO : Devrait être configuré dans les paramètres du module
-                'o:resource_template' => ['o:id' => '2'],
-                'o:item_set' => [],
+                'o:resource_class' => ['o:id' => $this->classPerson] //TODO : Devrait être configuré dans les paramètres du module
             ];
+            if(isset($this->templatePerson)) $itemData['o:resource_template']=['o:id' => $this->templatePerson[0]];
+            if(isset($this->itemsetPerson)) $itemData['o:item_set']=['o:id' => $this->itemsetPerson[0]];
         }
 
         // Titre: nom complet
@@ -385,14 +397,14 @@ class ApiClient
                 }
             }
 
-            $this->logger->info(new Message("Order domains"));
+            //$this->logger->info(new Message("Order domains"));
             //ordonne sur le rank
             usort($concepts, function($a, $b) {
                 return $b["count"] - $a["count"];
             });
 
             //création des concepts
-            $this->logger->info(new Message("Get Set domains"));
+            //$this->logger->info(new Message("Get Set domains"));
             //$nb = 10;
             //for ($i=0; $i < $nb; $i++) { 
             //    $concept = $concepts[$i];
@@ -412,10 +424,12 @@ class ApiClient
                     '@annotation' => $annotation,
                 ];
             }
+            unset($concepts);                    
+
         }
 
         // ajoute les coContributeurs
-        $this->logger->info(new Message("Get Set coContributors"));
+        //$this->logger->info(new Message("Get Set coContributors"));
         if ($addCoContrib && !empty($personData['coContributors'])) {
             $itemData['bibo:contributorList']=[];
             foreach ($personData['coContributors'] as $co) {
@@ -431,12 +445,13 @@ class ApiClient
 
                     }else{
                         $itemCo = $scanrCo['items'][0];
-                    }                    
+                    }
                     $itemData['bibo:contributorList'][] = [
                         'property_id' => $this->getProperty('bibo:contributorList')->id()."",
                         'value_resource_id' => $itemCo->id(),
                         'type' => 'resource'
                     ];
+                    unset($itemCo);                    
                 } catch (\Exception $e) {
                     $person = isset($co['fullname']) ? $co['fullname'] : "no"; 
                     $person .= isset($co['person']) ? $co['person'] : "no";
@@ -476,6 +491,7 @@ class ApiClient
                         'type' => 'resource',
                         '@annotation' => $annotation,
                     ];
+                    unset($idOrga);                    
                 }
             }
         }
@@ -535,7 +551,11 @@ class ApiClient
                     '@annotation' => $annotation,
                 ];
             }
+            unset($publis);                    
+
         }
+        // Avoid memory issue.
+        //$this->entityManager->clear();
 
         return $itemData;
     }

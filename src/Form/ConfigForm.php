@@ -85,6 +85,39 @@ class ConfigForm extends Form
                 ],
             ])
             ->add([
+                'name' => 'scanr_template_person',
+                'type' => CommonElement\OptionalResourceTemplateSelect::class,
+                'options' => [
+                    'element_group' => 'editing',
+                    'label' => 'Choose Resource Template of the person', // @translate
+                    'empty_option' => '',
+                ],
+                'attributes' => [
+                    'id' => 'easyadmin_quick_template',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select resource templates…', // @translate'
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_itemset_person',
+                'type' => CommonElement\OptionalItemSetSelect::class,
+                'options' => [
+                    'element_group' => 'advanced_search',
+                    'label' => 'Item sets to new person', // @translate
+                    'empty_option' => '',
+                    'prepend_value_options' => [
+                        'all' => 'All item sets', // @translate
+                    ],
+                ],
+                'attributes' => [
+                    'id' => 'scanr_itemset_person',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select item sets…', // @translate
+                ],
+            ])
+            ->add([
                 'name' => 'scanr_class_structure',
                 'type' => CommonElement\OptionalResourceClassSelect::class,
                 'options' => [

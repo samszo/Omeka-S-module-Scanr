@@ -101,13 +101,13 @@ class addScanrData extends AbstractJob
 
                         // Créer un item Omeka S avec les données de la personne
                         $personData["items"][]=$resource;
-                        $itemData = $scanR->mapPersonToItem($personData);
-                        
+                        $itemData = $scanR->mapPersonToItem($personData);                        
                         $response = $api->update('items',$resource->id(),$itemData,[], ['continueOnError' => true,'isPartial' => 1, 'collectionAction' => 'replace']);
                         $logger->info(
-                            '{num} - {person} #{id} has been updated by user #{userId}.', // @translate
-                            ['num' => $process, 'person' => $resource->displayTitle(), 'id' => $resource->id(), 'referenceId' => 'Scanr']
+                            '{num} - {person} #{resource_id} has been updated by user #{userId}.', // @translate
+                            ['num' => $process, 'person' => $resource->displayTitle(), 'resource_id' => $resource->id(), 'referenceId' => 'Scanr']
                         );
+                        unset($itemData);                    
 
                     }
 
