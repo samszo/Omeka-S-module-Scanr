@@ -85,6 +85,7 @@ class addScanrData extends AbstractJob
                     try {
                         $result = $scanR->searchPersons($resource->displayTitle(),0,1);
                     } catch (\Exception $e) {
+                        $result = false;
                         $logger->warn(new Message(
                             'Personne non trouvée : %s', // @translate
                             $resource->displayTitle()." ".$e->getMessage()
