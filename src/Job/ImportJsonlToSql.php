@@ -139,7 +139,7 @@ class ImportJsonlToSql extends AbstractJob
             return;
         }
 
-        $placeholders = implode(',', array_fill(0, count($batch), '(?,?,?,?,?)'));
+        $placeholders = implode(',', array_fill(0, count($batch), '(?,?,?)'));
 
         $sql = "INSERT INTO scanr_person (id, fullName, data)
                 VALUES $placeholders
