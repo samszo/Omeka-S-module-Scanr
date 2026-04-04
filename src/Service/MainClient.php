@@ -158,11 +158,6 @@ abstract class MainClient
      */
     protected function referenceSearchResults(array $data, $class): array
     {
-        // Guard : ces dépendances ne sont pas disponibles dans tous les clients
-        if (!$this->connection || !$this->apiOmk || !$this->propFind) {
-            return [];
-        }
-
         switch ($class) {
             case $this->classPerson:
                 $prop = $this->getProperty($this->propFind)->id();
@@ -522,9 +517,15 @@ abstract class MainClient
      */
     protected function getOrga(array $orga): int
     {
+        /*on récupère la ressource la plus ancienne avec un titre similaire car l'identifiant n'est pas toujours renseigné
+        $prop   = $this->getProperty('dcterms:title')->id();
+        $val    = $orga['structure']['label']['default'];
+        $sql    = 'SELECT resource_id FROM value WHERE property_id = ? AND value = ?  ORDER BY id';
+        */
+        //on récupère la ressource la plus ancienne avec une référence similaireau début
         $prop   = $this->getProperty('dcterms:isReferencedBy')->id();
-        $val    = $orga['structure']['id_name'];
-        $sql    = 'SELECT resource_id FROM value WHERE property_id = ? AND value = ?';
+        $val    = $orga['structure']['id']."%";
+        $sql    = 'SELECT resource_id FROM value WHERE property_id = ? AND value LIKE ?  ORDER BY id';
         $result = $this->connection->fetchAll($sql, [$prop, $val]);
 
         if (!empty($result)) {
@@ -538,7 +539,7 @@ abstract class MainClient
         $oItem = ['o:resource_class' => ['o:id' => $this->getRc($this->classStructure)->id()]];
         $oItem['dcterms:title'][]          = ['property_id' => $this->getProperty('dcterms:title')->id(),          '@value' => $orga['structure']['label']['default'], 'type' => 'literal'];
         $oItem['dcterms:type'][]           = ['property_id' => $this->getProperty('dcterms:type')->id(),           '@value' => $this->getTypeFromOrga($orga),            'type' => 'literal'];
-        $oItem['dcterms:isReferencedBy'][] = ['property_id' => $this->getProperty('dcterms:isReferencedBy')->id(), '@value' => $orga['structure']['id_name'],            'type' => 'literal'];
+        $oItem['dcterms:isReferencedBy'][] = ['property_id' => $this->getProperty('dcterms:isReferencedBy')->id(), '@value' => $orga['structure']['id'],            'type' => 'literal'];
 
         $cpt = $this->apiOmk->create('items', $oItem, [], ['continueOnError' => true])->getContent();
         $id  = $cpt->id();

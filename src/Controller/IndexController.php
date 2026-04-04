@@ -76,12 +76,12 @@ class IndexController extends AbstractActionController
 
 
     private function setRequester(){
-        $apiConn = $this->apiClient->testConnection();
-        if ($apiConn) {
-            $this->requester = $this->apiClient;
-        } elseif ($this->sqlClient->testConnection()) {
+        if ($this->sqlClient->testConnection()) {
             // Table SQL disponible → recherche rapide
             $this->requester = $this->sqlClient;
+        } elseif ($this->apiClient->testConnection()) {
+            // requête sur l'API scanr = la plus à jour mais pas toujours disponible
+            $this->requester = $this->apiClient;
         } else {
             // Fallback pur PHP (lent sur de grands fichiers)
             $this->requester = $this->jsonlClient;

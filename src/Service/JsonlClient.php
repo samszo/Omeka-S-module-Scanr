@@ -21,11 +21,12 @@ class JsonlClient extends MainClient
     /** @var bool Indique si load() a été appelé */
     protected bool $loaded = false;
 
-    public function __construct(Settings $settings, $logger)
+    public function __construct(Settings $settings, $api, $logger)
     {
         $this->initFromSettings($settings);
 
         $this->logger   = $logger;
+        $this->apiOmk     = $api;
         $this->filePath = $settings->get('scanr_json_path');
         // apiOmk intentionnellement absent → referenceSearchResults() renvoie []
     }

@@ -10,6 +10,7 @@ class SqlClientFactory implements FactoryInterface
     {
         return new SqlClient(
             $services->get('Omeka\Settings'),
+            $services->get('Omeka\ApiManager'),
             $services->get('Omeka\Connection'),
             $services->get('Omeka\Logger')
         );

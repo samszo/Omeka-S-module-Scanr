@@ -17,10 +17,11 @@ use Omeka\Settings\Settings;
  */
 class SqlClient extends MainClient
 {
-    public function __construct(Settings $settings, $connection, $logger)
+    public function __construct(Settings $settings, $api, $connection, $logger)
     {
         $this->initFromSettings($settings);
 
+        $this->apiOmk     = $api;
         $this->connection = $connection;
         $this->logger     = $logger;
         // apiOmk intentionnellement absent → referenceSearchResults() renvoie []
@@ -54,16 +55,20 @@ class SqlClient extends MainClient
 
         try {
             $rows = $this->connection->fetchAllAssociative(
-                        "SELECT id, firstName, lastName, fullName, data
+                        "SELECT id, fullName, data
                         FROM   scanr_person
                         WHERE  id = ?",
                         [$personId]
                     );
             $total = count($rows);
-            if ($total > 0) {
-                return $this->buildResult($total, $rows);
+            if ($total == 1) {
+                $result = $this->buildResult($total, $rows);
+                return $result['hits'][0];
+            }elseif ($total == 0) {
+                throw new \Exception('SQL scanR person not found : ' . $personId);
+            }else {
+                throw new \Exception('SQL scanR more than one person found : ' . $personId);
             }
-            throw new \Exception('SQL scanR person not found : ' . $personId);
         } catch (\Exception $e) {
             throw new \Exception('Error querying scanR SQL: ' . $e->getMessage());
         }
@@ -81,7 +86,7 @@ class SqlClient extends MainClient
         $query  = trim($query);
         $offset = $page * $size;
 
-        return mb_strlen($query) >= 20
+        return mb_strlen($query) >= 3
             ? $this->searchFulltext($query, $size, $offset)
             : $this->searchLike($query, $size, $offset);
     }
@@ -96,7 +101,7 @@ class SqlClient extends MainClient
     protected function searchFulltext(string $query, int $size, int $offset): array
     {
         $booleanQuery = $this->toBooleanQuery($query);
-        $matchExpr    = 'MATCH(firstName, lastName, fullName) AGAINST (? IN BOOLEAN MODE)';
+        $matchExpr    = 'MATCH(fullName) AGAINST (? IN BOOLEAN MODE)';
 
         $total = (int) $this->connection->fetchOne(
             "SELECT COUNT(*) FROM scanr_person WHERE $matchExpr",
@@ -104,13 +109,13 @@ class SqlClient extends MainClient
         );
 
         $rows = $this->connection->fetchAllAssociative(
-            "SELECT id, firstName, lastName, fullName, data,
+            "SELECT id, fullName, data,
                     $matchExpr AS score
              FROM   scanr_person
              WHERE  $matchExpr
              ORDER  BY score DESC
-             LIMIT  ? OFFSET ?",
-            [$booleanQuery, $booleanQuery, $booleanQuery, $size, $offset]
+             LIMIT  $size OFFSET $offset",
+            [$booleanQuery, $booleanQuery]
         );
 
         return $this->buildResult($total, $rows);
@@ -122,19 +127,20 @@ class SqlClient extends MainClient
     protected function searchLike(string $query, int $size, int $offset): array
     {
         $pattern = '%' . $query . '%';
-        $where   = 'fullName LIKE ? OR firstName LIKE ? OR lastName LIKE ?';
+        $where   = 'fullName LIKE ? ';
 
         $total = (int) $this->connection->fetchOne(
             "SELECT COUNT(*) FROM scanr_person WHERE $where",
-            [$pattern, $pattern, $pattern]
+            [$pattern]
         );
 
+
         $rows = $this->connection->fetchAllAssociative(
-            "SELECT id, firstName, lastName, fullName, data
+            "SELECT id, fullName, data
              FROM   scanr_person
              WHERE  $where
              LIMIT  ? OFFSET ?",
-            [$pattern, $pattern, $pattern, $size, $offset]
+            [$pattern, $size, $offset]
         );
 
         return $this->buildResult($total, $rows);

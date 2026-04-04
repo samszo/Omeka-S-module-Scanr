@@ -52,15 +52,16 @@ class addScanrData extends AbstractJob
             $totalToProcess
         ));
 
-        $scanR = $services->get('Scanr\ApiClient');
+        $scanR = $this->setRequester($services);
 
-        //récupère le workspace pour avoir la liste des documents
+        //test la connexion
         $connect = $scanR->testConnection();
+
+        $process = 0;
 
         if(!$connect){
             $logger->warn(new Message('Unable to connect to scanR. Please check your configuration.'));
         }else{
-            $process = 0;
 
             foreach (array_chunk($itemIds, self::BULK_LIMIT) as $listItemIds) {
                     /** @var \Omeka\Api\Representation\AbstractRepresentation[] $resources */
@@ -131,4 +132,24 @@ class addScanrData extends AbstractJob
             $process, $totalToProcess
         ));
     }
+
+    private function setRequester($services){
+
+        $sqlClient = $services->get('Scanr\SqlClient');    
+        if ($sqlClient->testConnection()) {
+            // Table SQL disponible → recherche rapide
+            return $sqlClient;
+        }else{
+            $apiClient = $services->get('Scanr\ApiClient');    
+            if ($apiClient->testConnection()) {
+                // requête sur l'API scanr = la plus à jour mais pas toujours disponible
+                return $apiClient;
+            } else {
+                // Fallback pur PHP (lent sur de grands fichiers)
+                return $services->get('Scanr\JsonlClient');    
+            }
+        }
+
+    }
+
 }

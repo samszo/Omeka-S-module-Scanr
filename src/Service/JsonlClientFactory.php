@@ -10,6 +10,7 @@ class JsonlClientFactory implements FactoryInterface
     {
         return new JsonlClient(
             $services->get('Omeka\Settings'),
+            $services->get('Omeka\ApiManager'),
             $services->get('Omeka\Logger')
         );
     }

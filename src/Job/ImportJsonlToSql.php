@@ -94,8 +94,6 @@ class ImportJsonlToSql extends AbstractJob
 
                 $batch[] = [
                     'id'        => (string) $record['id'],
-                    'firstName' => isset($record['firstName']) ? mb_substr((string) $record['firstName'], 0, 255) : null,
-                    'lastName'  => isset($record['lastName'])  ? mb_substr((string) $record['lastName'],  0, 255) : null,
                     'fullName'  => isset($record['fullName'])  ? mb_substr((string) $record['fullName'],  0, 512) : null,
                     'data'      => $line,   // JSON brut original (compact)
                 ];
@@ -143,11 +141,9 @@ class ImportJsonlToSql extends AbstractJob
 
         $placeholders = implode(',', array_fill(0, count($batch), '(?,?,?,?,?)'));
 
-        $sql = "INSERT INTO scanr_person (id, firstName, lastName, fullName, data)
+        $sql = "INSERT INTO scanr_person (id, fullName, data)
                 VALUES $placeholders
                 ON DUPLICATE KEY UPDATE
-                    firstName   = VALUES(firstName),
-                    lastName    = VALUES(lastName),
                     fullName    = VALUES(fullName),
                     data        = VALUES(data),
                     imported_at = CURRENT_TIMESTAMP";
@@ -155,8 +151,6 @@ class ImportJsonlToSql extends AbstractJob
         $params = [];
         foreach ($batch as $row) {
             $params[] = $row['id'];
-            $params[] = $row['firstName'];
-            $params[] = $row['lastName'];
             $params[] = $row['fullName'];
             $params[] = $row['data'];
         }
