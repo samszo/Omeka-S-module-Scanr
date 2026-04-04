@@ -4,6 +4,9 @@ namespace Scanr\Controller;
 use Laminas\Mvc\Controller\AbstractActionController;
 use Laminas\View\Model\ViewModel;
 use Scanr\Service\ApiClient;
+use Scanr\Service\DuckClient;
+use Scanr\Service\JsonlClient;
+use Scanr\Service\SqlClient;
 use Scanr\Form\SearchForm;
 use Omeka\Mvc\Exception\NotFoundException;
 
@@ -15,6 +18,26 @@ class IndexController extends AbstractActionController
     protected $apiClient;
 
     /**
+     * @var DuckClient
+     */
+    protected $duckClient;
+
+    /**
+     * @var JsonlClient
+     */
+    protected $jsonlClient;
+
+    /**
+     * @var SqlClient
+     */
+    protected $sqlClient;
+
+    /**
+     * @var requester
+     */
+    protected $requester;
+
+    /**
      * @var SearchForm
      */
     protected $searchForm;
@@ -24,11 +47,23 @@ class IndexController extends AbstractActionController
      */
     protected $api;
 
-    public function __construct(ApiClient $apiClient, SearchForm $searchForm, $api)
+    /**
+     * @var \Omeka\Job\Dispatcher
+     */
+    protected $dispatcher;
+
+    public function __construct(ApiClient $apiClient, JsonlClient $jsonlClient, DuckClient $duckClient, SqlClient $sqlClient, SearchForm $searchForm, $api, $dispatcher)
     {
-        $this->apiClient = $apiClient;
+        $this->apiClient  = $apiClient;
+        $this->duckClient = $duckClient;
+        $this->jsonlClient= $jsonlClient;
+        $this->sqlClient  = $sqlClient;
         $this->searchForm = $searchForm;
-        $this->api = $api;
+        $this->api        = $api;
+        $this->dispatcher = $dispatcher;
+
+        $this->setRequester();
+
     }
 
 
@@ -37,6 +72,21 @@ class IndexController extends AbstractActionController
         return new ViewModel([
             'form' => $this->searchForm,
         ]);
+    }
+
+
+    private function setRequester(){
+        $apiConn = $this->apiClient->testConnection();
+        if ($apiConn) {
+            $this->requester = $this->apiClient;
+        } elseif ($this->sqlClient->testConnection()) {
+            // Table SQL disponible → recherche rapide
+            $this->requester = $this->sqlClient;
+        } else {
+            // Fallback pur PHP (lent sur de grands fichiers)
+            $this->requester = $this->jsonlClient;
+        }
+
     }
 
     public function searchAction()
@@ -62,7 +112,7 @@ class IndexController extends AbstractActionController
         $size = 3;
 
         try {
-            $results = $this->apiClient->searchPersons($query, $page, $size);
+            $results = $this->requester->searchPersons($query, $page, $size);
             
             $view->setVariables([
                 'form' => $this->searchForm,
@@ -94,7 +144,7 @@ class IndexController extends AbstractActionController
         }
 
         try {
-            $personData = $this->apiClient->getPersonById($personId);
+            $personData = $this->requester->getPersonById($personId);
             
             if (!$personData) {
                 $this->messenger()->addError('Personne non trouvée');
@@ -102,7 +152,7 @@ class IndexController extends AbstractActionController
             }
 
             // Créer un item Omeka S avec les données de la personne
-            $itemData = $this->apiClient->mapPersonToItem($personData);
+            $itemData = $this->requester->mapPersonToItem($personData);
             
             $response = $this->api->create('items', $itemData);
             
@@ -116,6 +166,29 @@ class IndexController extends AbstractActionController
         }
 
         return $this->redirect()->toRoute('admin/scanr/search');
+    }
+
+    /**
+     * Lance le job d'import du fichier JSONL vers la table MySQL `scanr_person`.
+     * Accessible via POST /scanr/import-jsonl
+     */
+    public function importJsonlAction()
+    {
+        $truncate = (bool) $this->params()->fromPost('truncate', true);
+
+        try {
+            $job = $this->dispatcher->dispatch(
+                \Scanr\Job\ImportJsonlToSql::class,
+                ['truncate' => $truncate]
+            );
+            $this->messenger()->addSuccess(
+                sprintf('Import JSONL lancé en arrière-plan (job #%d). Consultez les logs pour suivre la progression.', $job->getId())
+            );
+        } catch (\Exception $e) {
+            $this->messenger()->addError('Erreur lors du lancement du job : ' . $e->getMessage());
+        }
+
+        return $this->redirect()->toRoute('admin/scanr');
     }
 
     public function associerAction()
@@ -139,7 +212,7 @@ class IndexController extends AbstractActionController
         }
 
         try {
-            $personData = $this->apiClient->getPersonById($personId);
+            $personData = $this->requester->getPersonById($personId);
             
             if (!$personData) {
                 $this->messenger()->addError('Personne non trouvée');
@@ -147,7 +220,7 @@ class IndexController extends AbstractActionController
             }
 
             // Créer un item Omeka S avec les données de la personne
-            $itemData = $this->apiClient->mapPersonToItem($personData,$itemId);
+            $itemData = $this->requester->mapPersonToItem($personData,$itemId);
             
             $response = $this->api->update('items',$itemId ,$itemData,[], ['continueOnError' => true,'isPartial' => 1, 'collectionAction' => 'replace']);
 

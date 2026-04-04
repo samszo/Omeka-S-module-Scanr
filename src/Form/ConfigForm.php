@@ -13,6 +13,31 @@ class ConfigForm extends Form
     {
         $this
             ->add([
+                'name' => 'scanr_json_path',
+                'type' => Element\Text::class,
+                'options' => [
+                    'label' => "Path du fichier jsonl de scanR",
+                    'info' => "Path du fichier jsonl de scanR à télécharger dans le répertoire data du module Scanr à partir d'ici : https://scanr.enseignementsup-recherche.gouv.fr/docs/overview",
+                ],
+                'attributes' => [
+                    'id' => 'scanr_json_path',
+                    'required' => true
+                ],
+            ])
+            /*
+            ->add([
+                'name' => 'scanr_json_import',
+                'type' => Element\Checkbox::class,
+                'options' => [
+                    'label' => 'Import json data to sql', // @translate
+                ],
+                'attributes' => [
+                    'id' => 'scanr_json_import',
+                    'required' => false
+                ],
+            ])
+            */            
+            ->add([
                 'name' => 'scanr_url',
                 'type' => Element\Text::class,
                 'options' => [

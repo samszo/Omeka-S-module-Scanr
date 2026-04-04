@@ -2,738 +2,157 @@
 namespace Scanr\Service;
 
 use Omeka\Settings\Settings;
-use Omeka\Api\Representation\PropertyRepresentation;
 use Elastic\Elasticsearch\ClientBuilder;
 use Omeka\Stdlib\Message;
 
 /**
- * Client pour l'API Elasticsearch de scanR
+ * Client pour l'API Elasticsearch de scanR.
  * documentation : https://scanr.enseignementsup-recherche.gouv.fr/docs/
  */
-class ApiClient
+class ApiClient extends MainClient
 {
-    /**
-     * @var string
-     */
+    /** @var string  URL de l'API Elasticsearch */
     protected $apiUrl;
 
-    /**
-     * @var client
-     */
+    /** @var \Elastic\Elasticsearch\Client */
     protected $client;
 
-    /**
-     * @var Settings
-     */
-    protected $settings;
-
-    /**
-     * @var connection
-     */
-    protected $connection;
-
-    /**
-     * @var connection
-     */
-    protected $entityManager;
-
-    /**
-     * @var $apiOmk
-     */
-    protected $apiOmk;
-
-    /**
-     * @var array
-     */
-    protected $properties = [];
-
-    /**
-     * @var array
-     */
-    protected $rcs = [];
-
-    /**
-     * @var $user
-     */
+    /** @var string */
     protected $user;
-    /**
-     * @var $pwd
-     */
-    protected $pwd;
-    /**
-     * @var $logger
-     */
-    protected $logger;
-    /**
-     * @var $propFind
-     */
-    protected $propFind;
-    /**
-     * @var $classPerson
-     */
-    protected $classPerson;
-    protected $templatePerson;
-    protected $itemsetPerson;
 
-    /**
-     * @var $classPerson
-     */
-    protected $propHasStructure;
-    protected $propHasConcept;
-    /**
-     * @var $classStructure
-     */
-    protected $classStructure;
+    /** @var string */
+    protected $pwd;
 
     public function __construct(Settings $settings, $api, $logger, $connection, $entityManager)
     {
-        $this->connection = $connection;
-        $this->settings = $settings;    
-        $this->apiOmk = $api;
-        $this->logger = $logger;
-        $this->entityManager = $entityManager; 
+        $this->initFromSettings($settings);
+
+        $this->apiOmk        = $api;
+        $this->logger        = $logger;
+        $this->connection    = $connection;
+        $this->entityManager = $entityManager;
+
         $this->apiUrl = $settings->get('scanr_url', 'https://scanr-api.enseignementsup-recherche.gouv.fr');
-        $this->user = $settings->get('scanr_username');
-        $this->pwd = $settings->get('scanr_pwd');
-        $this->propFind = $settings->get('scanr_properties_fullName')[0];
-        $this->classPerson = $settings->get('scanr_class_person')[0];
-        $this->classStructure = $settings->get('scanr_class_structure')[0];
-        $this->propHasStructure = $settings->get('scanr_properties_hasStructure')[0];
-        $this->propHasConcept = $settings->get('scanr_properties_hasConcept')[0];
-        $this->templatePerson = $settings->get('scanr_template_person');
-        $this->itemsetPerson = $settings->get('scanr_itemset_person');
+        $this->user   = $settings->get('scanr_username');
+        $this->pwd    = $settings->get('scanr_pwd');
 
-
-        if(!isset($this->user) || !isset($this->pwd)) throw new \Exception("Error querying scanR API: Veuillez saisir le nom de l'utilisateur et les mot de passe dans les paramètres du module");
-        $this->testConnection();
+        if (!isset($this->user) || !isset($this->pwd)) {
+            throw new \Exception("Error querying scanR API: Veuillez saisir le nom de l'utilisateur et le mot de passe dans les paramètres du module");
+        }
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // Interface publique
+    // ──────────────────────────────────────────────────────────────────────────
+
     /**
-     * Rechercher des personnes dans scanR
-     * cf/ https://www.elastic.co/docs/reference/elasticsearch/clients/php/search_operations
-     * @param string $query Requête de recherche
-     * @param int $page Page de résultats (commence à 0)
-     * @param int $size Nombre de résultats par page
-     * @return array Résultats de la recherche
+     * Rechercher des personnes dans scanR via Elasticsearch.
+     * @see https://www.elastic.co/docs/reference/elasticsearch/clients/php/search_operations
      */
-    public function searchPersons($query, $page = 0, $size = 3)
+    public function searchPersons(string $query, int $page = 0, int $size = 3): array
     {
         $params = [
             'index' => 'scanr-persons',
             'body'  => [
-                'from'=> $page,
-                'size'=> $size,                
-                'query' => [
-                    'match' => [
-                        'fullName' => $query
-                    ]
-                ]
-            ]
+                'from'  => $page,
+                'size'  => $size,
+                'query' => ['match' => ['fullName' => $query]],
+            ],
         ];
+
         try {
             $response = $this->client->search($params);
 
             if (isset($response['hits']['hits']) && count($response['hits']['hits']) > 0) {
-                $data = $response->asArray();
-                return $this->formatSearchResults($data);
-            } else {
-                throw new \Exception('API request failed: ' . $response->getStatusCode() . ' - ' . $response->getReasonPhrase());
+                return $this->formatSearchResults($response->asArray());
             }
+            throw new \Exception('API request failed: ' . $response->getStatusCode() . ' - ' . $response->getReasonPhrase());
         } catch (\Exception $e) {
             throw new \Exception('Error querying scanR API: ' . $e->getMessage());
         }
     }
 
     /**
-     * Obtenir les détails d'une personne par son ID
-     *
-     * @param string $personId ID de la personne dans scanR
-     * @return array|null Données de la personne ou null si non trouvée
+     * Obtenir les détails d'une personne par son ID Elasticsearch.
      */
-    public function getPersonById($personId)
+    public function getPersonById(string $personId): array
     {
         $params = [
             'index' => 'scanr-persons',
             'body'  => [
                 'query' => [
-                    'bool' => [
-                        'must' => [
-                            [ 'match' => [ 'id' => $personId ] ]
-                        ]
-                    ]
-                ]
-            ]
+                    'bool' => ['must' => [['match' => ['id' => $personId]]]],
+                ],
+            ],
         ];
-        $this->logger->info(
-            '{person} scanr match.', // @translate
-            ['person' => $personId, 'referenceId' => 'Scanr - getPersonById']
-        );
+
+        $this->logger->info('{person} scanr match.', [
+            'person'      => $personId,
+            'referenceId' => 'Scanr - getPersonById',
+        ]);
 
         try {
-            $response = $this->client->search($params);        
-        
+            $response = $this->client->search($params);
+
             if (isset($response['hits']['hits']) && count($response['hits']['hits']) > 0) {
-                $data = $response->asArray();
-                return $this->formatPerson($data['hits']['hits'][0]);
-            } else {
-                throw new \Exception('API scanR person not found : ' .$personId);
+                return $this->formatPerson($response->asArray()['hits']['hits'][0]);
             }
+            throw new \Exception('API scanR person not found : ' . $personId);
         } catch (\Exception $e) {
             throw new \Exception('Error querying scanR API: ' . $e->getMessage());
         }
     }
 
     /**
-     * Formater les résultats de recherche
-     *
-     * @param array $data Données brutes de l'API
-     * @return array Résultats formatés
+     * Tester la connexion à l'API Elasticsearch.
      */
-    protected function formatSearchResults($data)
-    {
-        $results = [
-            'total' => $data['hits']['total']['value'] ?? 0,
-            'hits' => [],
-        ];
-
-        if (isset($data['hits']['hits'])) {
-            foreach ($data['hits']['hits'] as $hit) {
-                $results['hits'][] = $this->formatPerson($hit);
-            }
-        }
-
-        return $results;
-    }
-
-    /**
-     * Formater le résultat pour une personne de recherche
-     *
-     * @param array $hit Données brutes de l'API
-     * @return array Résultats formatés
-     */
-    protected function formatPerson($hit)
-    {
-        $source = $hit['_source'] ?? [];
-        $results = [
-            'id' => $source['id'] ?? '',
-            'score' => $hit['_score'] ?? 0,
-            'items' => $this->referenceSearchResults($source,$this->classPerson),
-            'firstName' => $source['firstName'] ?? '',
-            'lastName' => $source['lastName'] ?? '',
-            'fullName' => $source['fullName'] ?? '',
-            'domains' => $source['domains'] ?? [],
-            'coContributors' => $source['coContributors'] ?? [],
-            'externalIds' => $source['externalIds'] ?? [],
-            'top_domains' => $source['top_domains'] ?? [],
-            'affiliations' => $source['affiliations'] ?? [],
-            'awards' => $source['awards'] ?? [],
-            'publications' => $source['publications'] ?? [],
-        ];
-
-        return $results;
-    }
-
-
-    /**
-     * Vérifier la présence de la référence
-     *
-     * @param array $data Données brutes de l'API
-     * @param string $class class de la ressource
-     * @return array Résultats formatés
-     */
-    protected function referenceSearchResults($data, $class)
-    {
-        $param = [];
-        switch ($class) {
-            case $this->classPerson:
-                /*
-                $param['property'][0]['property'] = (string) $this->getProperty($this->propFind)->id();
-                $param['property'][0]['type'] = 'eq';
-                $param['property'][0]['text'] = $data['fullName'] ?? '';
-                */
-                $prop = $this->getProperty($this->propFind)->id(); 
-                $val = $data['fullName'];
-                $sql = <<<SQL
-                    select resource_id from value where property_id = $prop AND value = ?
-                SQL;
-                break;            
-        }
-        $result = $this->connection->fetchAll($sql,[$val]);
-        if (count($result)) {
-            $id = $result[0]["resource_id"];
-            $items = [$this->apiOmk->read('items', $id)->getContent()];
-            $this->logger->info(
-                'Person find "{val}" = #{resource_id}.', // @translate
-                ['val' => $data['firstName']." ".$data['lastName'], 'resource_id' => $id, 'referenceId' => 'Scanr - referenceSearchResults']
-            );
-        } else $items=[];
-        
-        return $items;
-    }
-
-    /**
-     * Tester la connexion à l'API
-     *
-     * @return bool True si la connexion fonctionne
-     */
-    public function testConnection()
+    public function testConnection(): bool
     {
         try {
             $this->client = ClientBuilder::create()
                 ->setHosts([$this->apiUrl])
                 ->setBasicAuthentication($this->user, $this->pwd)
                 ->build();
+
+            $this->client->search(['index' => 'persons']);
             return true;
         } catch (\Exception $e) {
             return false;
         }
     }
 
-    public function getProperty($term): PropertyRepresentation
-    {
-        if (!isset($this->properties[$term])) {
-            $this->properties[$term] = $this->apiOmk->search('properties', ['term' => $term])->getContent()[0];
-        }
-        return $this->properties[$term];
-    }
-
-    public function getRc($t)
-    {
-        if (!isset($this->rcs[$t])) {
-            $this->rcs[$t] = $this->apiOmk->search('resource_classes', ['term' => $t])->getContent()[0];
-        }
-        return $this->rcs[$t];
-    }
-
+    // ──────────────────────────────────────────────────────────────────────────
+    // Surcharge de formatPerson (format Elasticsearch : _source / _score)
+    // ──────────────────────────────────────────────────────────────────────────
 
     /**
-     * Mapper les données d'une personne scanR vers un item Omeka S
+     * Unwrap le format Elasticsearch avant de déléguer au parent.
      *
-     * @param array $personData Données de la personne depuis scanR
-     * @param bool $addCoContrib ajoute au nom les coCon,tributeurs
-     * @return array Données formatées pour Omeka S
+     * @param array $hit Un hit Elasticsearch avec les clés _source et _score
      */
-    public function mapPersonToItem($personData, $addCoContrib=true)
+    protected function formatPerson(array $hit, float $score = 0): array
     {
-        if($personData["items"] && count($personData["items"])){
-            $itemData = json_decode(json_encode($personData["items"][0]), true);        
-        }else{
-            $itemData = [
-                'o:resource_class' => ['o:id' => $this->classPerson] //TODO : Devrait être configuré dans les paramètres du module
-            ];
-            if(isset($this->templatePerson)) $itemData['o:resource_template']=['o:id' => $this->templatePerson[0]];
-            if(isset($this->itemsetPerson)) $itemData['o:item_set']=['o:id' => $this->itemsetPerson[0]];
-        }
-
-        // Titre: nom complet
-        if (!empty($personData['fullName'])) {
-            if(!isset($itemData['dcterms:title'])){
-                $itemData['dcterms:title'][] = [
-                    'type' => 'literal',
-                    'property_id' => $this->getProperty('dcterms:title')->id()."", 
-                    '@value' => $personData['fullName'],
-                ];
-            }
-        }
-
-        // Prénom
-        if (!empty($personData['firstName'])) {
-            if(!isset($itemData['foaf:firstName'])){
-                $itemData['foaf:firstName'][] = [
-                    'type' => 'literal',
-                    'property_id' => $this->getProperty('foaf:firstName')->id()."", 
-                    '@value' => $personData['firstName'],
-                ];
-            }
-        }
-
-        // Nom
-        if (!empty($personData['lastName'])) {
-            if(!isset($itemData['foaf:familyName'])){
-                $itemData['foaf:lastName'][] = [
-                    'type' => 'literal',
-                    'property_id' => $this->getProperty('foaf:familyName')->id()."", 
-                    '@value' => $personData['lastName'],
-                ];
-            }
-        }
-
-        // ID scanR comme identifiant
-        if (!empty($personData['id'])) {
-            if(!isset($itemData['dcterms:identifier'])){
-                $itemData['dcterms:identifier'][] = [
-                    'type' => 'literal',
-                    'property_id' => $this->getProperty('dcterms:identifier')->id()."", 
-                    '@value' => 'scanr:' . $personData['id'],
-                ];
-            }
-        }
-
-        if (!empty($personData['externalIds'])) {
-            $itemData['dcterms:isReferencedBy']=[];
-            foreach ($personData['externalIds'] as $id) {
-                $itemData['dcterms:isReferencedBy'][] = [
-                    'property_id' => $this->getProperty('dcterms:isReferencedBy')->id()."",
-                    '@id' => $id['url'],
-                    "o:label"=>$id['type'].':'.$id['id'],
-                    "type"=>'uri'
-                ];
-            }
-        }
-
-
-        // Description avec les domaines
-        if ($addCoContrib && !empty($personData['top_domains'])) {
-            $itemData[$this->propHasConcept]=[];
-            $concepts = [];
-
-
-            //construction du rank
-            $nb = count($personData['top_domains']);
-            $this->logger->info(new Message("Get rank domains  = ".$nb));
-            foreach ($personData['top_domains'] as $domain) {
-                if (isset($domain['label'])) {
-                    $key = $domain["type"]!="keyword" ? $domain["type"].$domain["code"] : $domain['label']["default"];
-                    if(isset($concepts[$key]))$concepts[$key]["count"]+=$domain["count"];
-                    else $concepts[$key] = $domain;
-                }
-            }
-
-            //$this->logger->info(new Message("Order domains"));
-            //ordonne sur le rank
-            usort($concepts, function($a, $b) {
-                return $b["count"] - $a["count"];
-            });
-
-            //création des concepts
-            //$this->logger->info(new Message("Get Set domains"));
-            //$nb = 10;
-            //for ($i=0; $i < $nb; $i++) { 
-            //    $concept = $concepts[$i];
-            foreach ($concepts as $concept) {
-                $idConcept = $this->getConcept($concept);
-                $annotation = [];
-                $annotation['curation:rank'][] = [
-                    'property_id' => $this->getProperty('curation:rank')->id()."",
-                    '@value' => $concept["count"]."",
-                    'type' => 'literal',
-                ];
-
-                $itemData[$this->propHasConcept][] = [
-                    'property_id' => $this->getProperty($this->propHasConcept)->id()."",
-                    'value_resource_id' => $idConcept,
-                    'type' => 'resource',
-                    '@annotation' => $annotation,
-                ];
-            }
-            unset($concepts);                    
-
-        }
-
-        // ajoute les coContributeurs
-        //$this->logger->info(new Message("Get Set coContributors"));
-        if ($addCoContrib && !empty($personData['coContributors'])) {
-            $itemData['bibo:contributorList']=[];
-            foreach ($personData['coContributors'] as $co) {
-                try {
-                    $scanrCo = $this->getPersonById($co['person']);
-                    if(count($scanrCo['items'])==0){
-                        $itemDataCo = $this->mapPersonToItem($scanrCo, false);            
-                        $itemCo = $this->apiOmk->create('items', $itemDataCo)->getContent();
-                        $this->logger->info(
-                            'Person create "{val}" = #{resource_id}.', // @translate
-                            ['val' => $itemCo->displayTitle(), 'resource_id' => $itemCo->id(), 'referenceId' => 'Scanr - mapPersonToItem']
-                        );
-
-                    }else{
-                        $itemCo = $scanrCo['items'][0];
-                    }
-                    $itemData['bibo:contributorList'][] = [
-                        'property_id' => $this->getProperty('bibo:contributorList')->id()."",
-                        'value_resource_id' => $itemCo->id(),
-                        'type' => 'resource'
-                    ];
-                    unset($itemCo);                    
-                } catch (\Exception $e) {
-                    $person = isset($co['fullname']) ? $co['fullname'] : "no"; 
-                    $person .= isset($co['person']) ? $co['person'] : "no";
-                    $this->logger->warn(new Message(
-                        $e->getMessage()." : ".$person)
-                    );
-                    //throw new \Exception('Error querying scanR API: ' . $e->getMessage());
-                }
-            }
-        }
-
-        // Affiliations
-        if (!empty($personData['affiliations'])) {
-            $itemData[$this->propHasStructure]=[];
-            foreach ($personData['affiliations'] as $affiliation) {
-                if (isset($affiliation['structure']['label'])) {
-                    $idOrga = $this->getOrga($affiliation);
-                    $annotation = [];
-                    $annotation['curation:rank'][] = [
-                        'property_id' => $this->getProperty('curation:rank')->id()."",
-                        '@value' => $affiliation["publicationsCount"],
-                        'type' => 'literal',
-                    ];
-                    $annotation['curation:start'][] = [
-                        'property_id' => $this->getProperty('curation:start')->id()."",
-                        '@value' => $affiliation["startDate"],
-                        'type' => 'literal',
-                    ];
-                    $annotation['curation:end'][] = [
-                        'property_id' => $this->getProperty('curation:end')->id()."",
-                        '@value' => $affiliation["endDate"],
-                        'type' => 'literal',
-                    ];
-                    $itemData[$this->propHasStructure][] = [
-                        'property_id' => $this->getProperty($this->propHasStructure)->id()."",
-                        'value_resource_id' => $idOrga,
-                        'type' => 'resource',
-                        '@annotation' => $annotation,
-                    ];
-                    unset($idOrga);                    
-                }
-            }
-        }
-
-
-        // Publications
-        if ($addCoContrib && !empty($personData['publications'])) {
-            $itemData['foaf:publications']=[];
-            /*ATTENTION à la création de doublon
-            pour les éliminer
-            DELETE a
-            FROM
-                value AS a,
-                value AS b
-            WHERE
-                a.id < b.id
-                AND a.property_id = 165 
-                AND b.property_id = 165
-                -- Any duplicates you want to check for
-                AND a.resource_id = b.resource_id
-                AND a.value = b.value;            
-            */
-            $publis = [];
-            //construction des status
-            foreach ($personData['publications'] as $publi) {
-                if (isset($publi['title']["default"])) {
-                    if(!isset($publis[$publi["publication"]])){
-                        $publis[$publi["publication"]]=$publi;
-                        $publis[$publi["publication"]]["status"]=[$publi["role"]];
-                    }elseif(!in_array($publi["role"],$publis[$publi["publication"]]["status"]))$publis[$publi["publication"]]["status"][]=$publi["role"];
-                }
-            }
-
-            foreach ($publis as $publi) {
-                $annotation = [];
-                $annotation['dcterms:date'][] = [
-                    'property_id' => $this->getProperty('dcterms:date')->id()."",
-                    '@value' => $publi["year"] ?? "",
-                    'type' => 'literal',//mettre un type date
-                ];
-                $annotation['dcterms:isReferencedBy'][] = [
-                    'property_id' => $this->getProperty('dcterms:isReferencedBy')->id()."",
-                    '@value' => $publi["publication"],
-                    'type' => 'literal',//mettre un type date
-                ];
-                foreach ($publi["status"] as $role) {
-                    $annotation['foaf:status'][] = [
-                        'property_id' => $this->getProperty('foaf:status')->id()."",
-                        '@value' => $role,
-                        'type' => 'literal',
-                    ];
-                }
-                $itemData['foaf:publications'][] = [
-                    'type' => 'literal',
-                    'property_id' => $this->getProperty('foaf:publications')->id()."",
-                    '@value' => $publi['title']["default"],
-                    '@annotation' => $annotation,
-                ];
-            }
-            unset($publis);                    
-
-        }
-        // Avoid memory issue.
-        //$this->entityManager->clear();
-
-        return $itemData;
+        return parent::formatPerson(
+            $hit['_source'] ?? [],
+            (float) ($hit['_score'] ?? 0)
+        );
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // Formatage des résultats (format Elasticsearch : hits.total.value)
+    // ──────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Récupère le tag au format skos
-     *
-     * @param array $tag
-     * @return o:Item
-     */
-    protected function getConcept($tag)
+    protected function formatSearchResults(array $data): array
     {
-        // Vérifie la présence de l'item pour gérer la création        
-        $param = [];
-        $val = $tag["label"]["default"];
-        if($tag["type"]=="wikidata"){   
-            /*         
-            $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
-            $param['property'][0]['type'] = 'eq';
-            $param['property'][0]['text'] = "https://www.wikidata.org/wiki/".$tag["code"];
-            */
-            $prop = $this->getProperty("dcterms:isReferencedBy")->id(); 
-            $val = "https://www.wikidata.org/wiki/".$tag["code"];
-            $sql = <<<SQL
-                select resource_id from value where property_id = $prop AND uri = ?
-            SQL;
-            //
-        } elseif (isset($tag["code"]) && isset($tag["type"])){
-            /*
-            $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
-            $param['property'][0]['type'] = 'eq';
-            $param['property'][0]['text'] = $tag["type"]."_".$tag["code"];
-            */
-            $prop = $this->getProperty("dcterms:isReferencedBy")->id(); 
-            $val = $tag["type"]."_".$tag["code"];
-            $sql = <<<SQL
-                select resource_id from value where property_id = $prop AND value = ?
-            SQL;
-            //
-        }else{
-            /*
-            $param['property'][0]['property'] = $this->getProperty("skos:prefLabel")->id() . "";
-            $param['property'][0]['type'] = 'eq';
-            $param['property'][0]['text'] = $tag["label"]["default"];
-            */
-            $prop = $this->getProperty("skos:prefLabel")->id(); 
-            $val = $tag["label"]["default"];
-            $sql = <<<SQL
-                select resource_id from value where property_id = $prop AND value = ?
-            SQL;
-            //
+        $results = [
+            'total' => $data['hits']['total']['value'] ?? 0,
+            'hits'  => [],
+        ];
 
+        foreach ($data['hits']['hits'] ?? [] as $hit) {
+            $results['hits'][] = $this->formatPerson($hit);
         }
-        //$result = $this->apiOmk->search('items', $param, ['returnScalar' => 'id'])->getContent();
 
-        $result = $this->connection->fetchAll($sql,[$val]);
-
-        if (count($result)) {
-            //$id = array_key_first($result);
-            $id = $result[0]["resource_id"];
-            $this->logger->info(
-                'Concept find "{val}" = #{resource_id}.', // @translate
-                ['val' => $val, 'resource_id' => $id]
-            );
-        } else {
-            $oItem = [];
-            $class = $this->getRc('skos:Concept');
-            $oItem['o:resource_class'] = ['o:id' => $class->id()];
-            $valueObject = [];
-            $valueObject['property_id'] = $this->getProperty("dcterms:title")->id();
-            $valueObject['@value'] = $tag["label"]["default"];
-            $valueObject['type'] = 'literal';
-            $oItem["dcterms:title"][] = $valueObject;
-            $valueObject = [];
-            $valueObject['property_id'] = $this->getProperty("skos:prefLabel")->id();
-            $valueObject['@value'] = $tag["label"]["default"];
-            $valueObject['type'] = 'literal';
-            $oItem["skos:prefLabel"][] = $valueObject;
-            if($tag["type"]=="wikidata"){
-                $valueObject = [];
-                $valueObject['property_id'] = $this->getProperty("dcterms:isReferencedBy")->id();
-                $valueObject['@id'] = "https://www.wikidata.org/wiki/".$tag["code"];
-                $valueObject['o:label'] = 'wikidata';
-                $valueObject['type'] = 'uri';
-                $oItem["dcterms:isReferencedBy"][] = $valueObject;
-            }
-            if (isset($tag["code"]) && isset($tag["type"])) {
-                $valueObject = [];
-                $valueObject['property_id'] = $this->getProperty("dcterms:isReferencedBy")->id();
-                $valueObject['@value'] = $tag["type"]."_".$tag["code"];
-                $valueObject['type'] = 'literal';
-                $oItem["dcterms:isReferencedBy"][] = $valueObject;
-            }            
-            // Création du tag
-            $cpt = $this->apiOmk->create('items', $oItem, [], ['continueOnError' => true])->getContent();
-            $id = $cpt->id();
-            $this->logger->info(
-                'Concept create "{val}" = #{resource_id}.', // @translate
-                ['val' => $val, 'resource_id' => $id]
-            );
-        }
-        return $id;
-
+        return $results;
     }
-
-    /**
-     * Récupère l'organisation
-     *
-     * @param array $orga
-     * @return o:Item
-     */
-    protected function getOrga($orga)
-    {
-        // Vérifie la présence de l'item pour gérer la création
-        $param = [];
-        /*
-        $param['property'][0]['property'] = $this->getProperty("dcterms:isReferencedBy")->id() . "";
-        $param['property'][0]['type'] = 'eq';
-        $param['property'][0]['text'] = $orga["structure"]["id_name"];
-        */
-        $prop = $this->getProperty("dcterms:isReferencedBy")->id(); 
-        $val = $orga["structure"]["id_name"];
-        $sql = <<<SQL
-            select resource_id from value where property_id = $prop AND value = ?
-        SQL;
-
-
-        //$result = $this->apiOmk->search('items', $param, ['returnScalar' => 'id'])->getContent();
-        $result = $this->connection->fetchAll($sql,[$val]);
-
-        if (count($result)) {
-            //$id = array_key_first($result);
-            $id = $result[0]["resource_id"];
-            $this->logger->info(
-                'Organisation find "{val}" = #{resource_id}.', // @translate
-                ['val' => $val, 'resource_id' => $id]
-            );
-        } else {
-            $oItem = [];
-            $class = $this->getRc($this->classStructure);
-            $oItem['o:resource_class'] = ['o:id' => $class->id()];
-            $valueObject = [];
-            $valueObject['property_id'] = $this->getProperty("dcterms:title")->id();
-            $valueObject['@value'] = $orga["structure"]["label"]["default"];
-            $valueObject['type'] = 'literal';
-            $oItem["dcterms:title"][] = $valueObject;
-            $valueObject = [];
-            $valueObject['property_id'] = $this->getProperty("dcterms:type")->id();
-            $valueObject['@value'] = $this->getTypeFromOrga($orga);
-            $valueObject['type'] = 'literal';
-            $oItem["dcterms:type"][] = $valueObject;            
-            $valueObject = [];
-            $valueObject['property_id'] = $this->getProperty("dcterms:isReferencedBy")->id();
-            $valueObject['@value'] = $orga["structure"]["id_name"];
-            $valueObject['type'] = 'literal';
-            $oItem["dcterms:isReferencedBy"][] = $valueObject;
-            // Création du tag
-            $cpt = $this->apiOmk->create('items', $oItem, [], ['continueOnError' => true])->getContent();
-            $id = $cpt->id();
-            $this->logger->info(
-                'Organisation create "{val}" = #{resource_id}.', // @translate
-                ['val' => $val, 'resource_id' => $id]
-            );
-
-
-        }
-        return $id;
-    }
-
-    function getTypeFromOrga($orga){
-        if(substr($orga["structure"]["id"],0,2)=="ED")return "Ecole doctorale";
-        else{
-            return isset($orga["structure"]["kind"]) ? $orga["structure"]["kind"][0] : "no";
-        } 
-    }
-
-
 }

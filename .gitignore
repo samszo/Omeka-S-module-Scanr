@@ -1,2 +1,4 @@
 vendor/
 .DS_Store
+data/persons_denormalized.jsonl.gz
+data/persons.parquet

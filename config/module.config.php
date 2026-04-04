@@ -11,7 +11,10 @@ return [
 
     'service_manager' => [
         'factories' => [
-            'Scanr\ApiClient' => Service\ApiClientFactory::class,
+            'Scanr\ApiClient'  => Service\ApiClientFactory::class,
+            'Scanr\DuckClient' => Service\DuckClientFactory::class,
+            'Scanr\JsonlClient'=> Service\JsonlClientFactory::class,
+            'Scanr\SqlClient'  => Service\SqlClientFactory::class,
         ],
     ],
     'controllers' => [
@@ -54,6 +57,9 @@ return [
             'scanr_class_concept' => ["skos:concept"],
             'scanr_properties_conceptLabel' => ["skos:prefLabel"],
             'scanr_properties_hasConcept' => ["dcterms:subject"],
+            'scanr_json_path' => dirname(__DIR__) . '/data/persons_denormalized.jsonl.gz',
+            'scanr_json_import' => false,
+            
         ],
     ],
 
@@ -104,6 +110,15 @@ return [
                                     'route' => '/associer',
                                     'defaults' => [
                                         'action' => 'associer',
+                                    ],
+                                ],
+                            ],
+                            'import-jsonl' => [
+                                'type' => 'Literal',
+                                'options' => [
+                                    'route' => '/import-jsonl',
+                                    'defaults' => [
+                                        'action' => 'importJsonl',
                                     ],
                                 ],
                             ],

@@ -25,5 +25,10 @@ $this->headTitle($this->translate('Scanr - Recherche de personnes'));
             $this->url('admin/scanr/search'),
             ['class' => 'button']
         ); ?>
+        <?php echo $this->hyperlink(
+            $this->translate('Importer les données JSON'),
+            $this->url('admin/scanr/import-jsonl'),
+            ['class' => 'button']
+        ); ?>
     </p>
 </div>
