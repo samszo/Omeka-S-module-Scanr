@@ -17,6 +17,12 @@ use Omeka\Settings\Settings;
  */
 class SqlClient extends MainClient
 {
+
+    /** @var schema 
+     * utilisé pour avoir une seule base scanr pour plusieurs base omeka s
+    */
+    protected $schema = "scanr.";
+
     public function __construct(Settings $settings, $api, $connection, $logger)
     {
         $this->initFromSettings($settings);
@@ -39,7 +45,7 @@ class SqlClient extends MainClient
     public function testConnection(): bool
     {
         try {
-            $n = $this->connection->fetchOne('SELECT id FROM scanr_person LIMIT 0,1');
+            $n = $this->connection->fetchOne('SELECT id FROM '.$this->schema.'scanr_person LIMIT 0,1');
             return  isset($n) && $n != "";
         } catch (\Exception $e) {
             return false;
@@ -56,7 +62,7 @@ class SqlClient extends MainClient
         try {
             $rows = $this->connection->fetchAllAssociative(
                         "SELECT id, fullName, data
-                        FROM   scanr_person
+                        FROM   ".$this->schema."scanr_person
                         WHERE  id = ?",
                         [$personId]
                     );
@@ -104,14 +110,14 @@ class SqlClient extends MainClient
         $matchExpr    = 'MATCH(fullName) AGAINST (? IN BOOLEAN MODE)';
 
         $total = (int) $this->connection->fetchOne(
-            "SELECT COUNT(*) FROM scanr_person WHERE $matchExpr",
+            "SELECT COUNT(*) FROM ".$this->schema."scanr_person WHERE $matchExpr",
             [$booleanQuery]
         );
 
         $rows = $this->connection->fetchAllAssociative(
             "SELECT id, fullName, data,
                     $matchExpr AS score
-             FROM   scanr_person
+             FROM   ".$this->schema."scanr_person
              WHERE  $matchExpr
              ORDER  BY score DESC
              LIMIT  $size OFFSET $offset",
@@ -137,7 +143,7 @@ class SqlClient extends MainClient
 
         $rows = $this->connection->fetchAllAssociative(
             "SELECT id, fullName, data
-             FROM   scanr_person
+             FROM   ".$this->schema."scanr_person
              WHERE  $where
              LIMIT  ? OFFSET ?",
             [$pattern, $size, $offset]

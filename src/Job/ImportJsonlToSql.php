@@ -22,6 +22,10 @@ class ImportJsonlToSql extends AbstractJob
      * À ajuster selon la RAM disponible (taille moyenne d'une ligne JSON * BATCH_SIZE).
      */
     const BATCH_SIZE = 500;
+    /** @var schema 
+     * utilisé pour avoir une seule base scanr pour plusieurs base omeka s
+    */
+    protected $schema = "scanr.";
 
     public function perform(): void
     {
@@ -41,7 +45,7 @@ class ImportJsonlToSql extends AbstractJob
 
         // ── Truncate optionnel ─────────────────────────────────────────────
         if ($this->getArg('truncate', true)) {
-            $connection->executeStatement('TRUNCATE TABLE scanr_person');
+            $connection->executeStatement('TRUNCATE TABLE '.$this->schema.'scanr_person');
             $logger->info('ImportJsonlToSql : table scanr_person vidée.');
         }
 
@@ -141,7 +145,7 @@ class ImportJsonlToSql extends AbstractJob
 
         $placeholders = implode(',', array_fill(0, count($batch), '(?,?,?)'));
 
-        $sql = "INSERT INTO scanr_person (id, fullName, data)
+        $sql = "INSERT INTO ".$this->schema."scanr_person (id, fullName, data)
                 VALUES $placeholders
                 ON DUPLICATE KEY UPDATE
                     fullName    = VALUES(fullName),
