@@ -294,12 +294,16 @@ abstract class MainClient
                 if (!isset($domain['label'])) {
                     continue;
                 }
+                /*
                 $key = $domain['type'] !== 'keyword'
                     ? $domain['type'] . $domain['code']
                     : $domain['label']['default'];
+                */
+                $key = mb_strtolower($domain['label']['default']);
 
                 if (isset($concepts[$key])) {
                     $concepts[$key]['count'] += $domain['count'];
+                    if(isset($domain['code']))$concepts[$key]['code']=$domain['code'];
                 } else {
                     $concepts[$key] = $domain;
                 }
