@@ -39,8 +39,8 @@ class SqlClient extends MainClient
     public function testConnection(): bool
     {
         try {
-            $n = $this->connection->fetchOne('SELECT COUNT(*) FROM scanr_person');
-            return (int) $n > 0;
+            $n = $this->connection->fetchOne('SELECT id FROM scanr_person LIMIT 0,1');
+            return  isset($n) && $n != "";
         } catch (\Exception $e) {
             return false;
         }

@@ -76,6 +76,7 @@ class IndexController extends AbstractActionController
 
 
     private function setRequester(){
+
         if ($this->sqlClient->testConnection()) {
             // Table SQL disponible → recherche rapide
             $this->requester = $this->sqlClient;
