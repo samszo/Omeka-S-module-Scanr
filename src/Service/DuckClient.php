@@ -36,7 +36,7 @@ class DuckClient extends MainClient
             throw new \Exception("Error querying duck Client: Veuillez vérifier l'adresse du fichier .jsonl");
         }
 
-        $this->testConnection();
+        //$this->testConnection();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
