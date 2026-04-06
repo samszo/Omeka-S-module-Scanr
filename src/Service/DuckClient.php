@@ -32,10 +32,6 @@ class DuckClient extends MainClient
         $this->entityManager = $entityManager;
         $this->duckPath      = $settings->get('scanr_json_path');
 
-        if (!file_exists($this->duckPath)) {
-            throw new \Exception("Error querying duck Client: Veuillez vérifier l'adresse du fichier .jsonl");
-        }
-
         //$this->testConnection();
     }
 
@@ -125,6 +121,10 @@ class DuckClient extends MainClient
      */
     public function testConnection(): bool
     {
+        if (!file_exists($this->duckPath)) {
+            throw new \Exception("Error querying duck Client: Veuillez vérifier l'adresse du fichier .jsonl");
+        }
+
         set_time_limit(120);
         try {
             $this->client = DuckDB::create($this->duckPath);
