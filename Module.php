@@ -15,6 +15,7 @@ use Laminas\View\Renderer\PhpRenderer;
 use Laminas\Mvc\MvcEvent;
 use Laminas\EventManager\Event;
 use Scanr\Form\BatchEditFieldset;
+use Scanr\Form\UserSettingsFieldset;
 
 class Module extends AbstractModule
 {
@@ -69,6 +70,18 @@ class Module extends AbstractModule
         );
 
         $sharedEventManager->attach(
+            'Omeka\Controller\Admin\Item',
+            'view.show.section_nav',
+            [$this, 'addExpertisesTab']
+        );
+
+        $sharedEventManager->attach(
+            'Omeka\Controller\Admin\Item',
+            'view.show.after',
+            [$this, 'renderExpertisesTab']
+        );
+
+        $sharedEventManager->attach(
             \Omeka\Form\SettingForm::class,
             'form.add_elements',
             [$this, 'handleMainSettings']
@@ -80,7 +93,27 @@ class Module extends AbstractModule
             [$this, 'formAddElementsResourceBatchUpdateForm']
         );
 
+                // Ajout du paramètre utilisateur
+        $sharedEventManager->attach(
+            \Omeka\Form\UserForm::class,
+            'form.add_elements',
+            [$this, 'handleUserSettings']
+        );
+
+
     }
+
+
+    /**
+     * Empèche les utilisateurs de voir le compte Google d'un autre utilisateur,
+     * y compris l'admin.
+     */
+    public function handleUserSettings(Event $event): void
+    {
+        $this->handleAnySettings($event, 'user_settings');
+    }
+
+
 
     public function getConfigForm(PhpRenderer $renderer)
     {
@@ -151,6 +184,23 @@ class Module extends AbstractModule
         );
         $message->setEscapeHtml(false);
         $messenger->addSuccess($message);
+    }
+
+    public function addExpertisesTab(Event $event): void
+    {
+        $sectionNav = $event->getParam('section_nav');
+        $sectionNav['scanr-expertises'] = 'Expertises'; // @translate
+        $event->setParam('section_nav', $sectionNav);
+    }
+
+    public function renderExpertisesTab(Event $event): void
+    {
+        $view = $event->getTarget();
+        $item = $view->vars()->offsetGet('item');
+        if (!$item) {
+            return;
+        }
+        echo $view->partial('scanr/item/expertises-tab', ['item' => $item]);
     }
 
 }

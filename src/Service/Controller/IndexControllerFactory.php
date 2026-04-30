@@ -18,7 +18,9 @@ class IndexControllerFactory implements FactoryInterface
             $services->get('Scanr\SqlClient'),
             $formElementManager->get(\Scanr\Form\SearchForm::class),
             $services->get('Omeka\ApiManager'),
-            $services->get(\Omeka\Job\Dispatcher::class)
+            $services->get(\Omeka\Job\Dispatcher::class),
+            $services->get('Omeka\Settings'),
+            $services->get('Omeka\Settings\User')
         );
     }
 }

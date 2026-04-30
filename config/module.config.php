@@ -9,6 +9,12 @@ return [
         ],
     ],
 
+    'api_adapters' => [
+        'invokables' => [
+            'scanr_expertises' => Api\Adapter\ExpertiseAdapter::class,
+        ],
+    ],
+
     'service_manager' => [
         'factories' => [
             'Scanr\ApiClient'  => Service\ApiClientFactory::class,
@@ -40,6 +46,7 @@ return [
         'invokables' => [
             Form\ConfigForm::class => Form\ConfigForm::class,
             Form\BatchEditFieldset::class => Form\BatchEditFieldset::class,
+            Form\UserSettingsFieldset::class  => Form\UserSettingsFieldset::class,
         ],
     ],
 
@@ -61,6 +68,11 @@ return [
             'scanr_json_import' => false,
             
         ],
+        'user_settings' => [
+            'scanr_labos_admin' => '',
+            'scanr_creator_id'  => '',
+        ],
+
     ],
 
 
@@ -119,6 +131,15 @@ return [
                                     'route' => '/import-jsonl',
                                     'defaults' => [
                                         'action' => 'importJsonl',
+                                    ],
+                                ],
+                            ],
+                            'expertise-ajax' => [
+                                'type' => 'Literal',
+                                'options' => [
+                                    'route' => '/expertise-ajax',
+                                    'defaults' => [
+                                        'action' => 'expertiseAjax',
                                     ],
                                 ],
                             ],
