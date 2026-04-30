@@ -9,6 +9,12 @@ return [
         ],
     ],
 
+    'block_layouts' => [
+        'invokables' => [
+            'scanrExpertisesList' => Site\BlockLayout\ExpertisesList::class,
+        ],
+    ],
+
     'api_adapters' => [
         'invokables' => [
             'scanr_expertises' => Api\Adapter\ExpertiseAdapter::class,

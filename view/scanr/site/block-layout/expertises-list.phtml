@@ -1,16 +1,16 @@
 <?php
 /**
- * Onglet "Expertises" de la page admin d'un item.
- * Inspiré de loadPerson() dans validExpertises/index.html.
+ * Block layout "Expertises Scanr" — rendu côté site.
  *
  * @var \Omeka\Api\Representation\ItemRepresentation $item
+ * @var string $heading
  */
 $escape   = $this->plugin('escapeHtml');
 $url      = $this->plugin('url');
 $assetUrl = $this->plugin('assetUrl');
 
-$itemId   = $item->id();
-$ajaxUrl  = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => false]);
+$itemId  = $item->id();
+$ajaxUrl = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => true]);
 ?>
 
 <?php $this->headLink()->appendStylesheet($assetUrl('css/scanr.css', 'Scanr')); ?>
@@ -19,23 +19,14 @@ $ajaxUrl  = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => false])
 
 <div id="scanr-expertises" class="section">
 
-    <?php /* ── Bannière : évaluateur non configuré ── */ ?>
     <div id="scanr-no-creator" class="scanr-no-creator" style="display:none">
-        <?php
-        $identity = $this->identity();
-        $userEditUrl = $identity
-            ? $url('admin/id', ['controller' => 'user', 'action' => 'edit', 'id' => $identity->getId()], ['fragment' => 'user-settings'])
-            : '#';
-        ?>
-        Configurez votre <strong>ID évaluateur</strong> dans
-        <a href="<?php echo $escape($userEditUrl); ?>">vos paramètres utilisateur</a>
+        Configurez votre <strong>ID évaluateur</strong> dans vos paramètres utilisateur
         (champ « ID item évaluateur ») pour pouvoir créer/modifier des expertises.
     </div>
 
-    <?php /* ── Header ── */ ?>
     <div class="scanr-exp-header">
         <h3>
-            Mots-clefs &amp; expertises
+            <?php echo $escape($heading); ?>
             <span class="scanr-kw-count" id="scanr-kw-count" style="display:none"></span>
         </h3>
         <div class="scanr-toolbar">
@@ -44,20 +35,18 @@ $ajaxUrl  = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => false])
         </div>
     </div>
 
-    <?php /* ── Barre de filtre ── */ ?>
     <div class="scanr-filter-bar" id="scanr-filter-bar" style="display:none">
         <input type="text" id="scanr-filter-text" placeholder="Filtrer les mots-clefs…" autocomplete="off" />
         <div class="scanr-chips">
-            <button class="scanr-chip active"     data-filter="all">Tous</button>
-            <button class="scanr-chip"            data-filter="todo">Sans mon expertise</button>
-            <button class="scanr-chip"            data-filter="done">Avec mon expertise</button>
-            <button class="scanr-chip"            data-filter="pos">Positifs</button>
-            <button class="scanr-chip"            data-filter="neg">Négatifs</button>
+            <button class="scanr-chip active"  data-filter="all">Tous</button>
+            <button class="scanr-chip"         data-filter="todo">Sans mon expertise</button>
+            <button class="scanr-chip"         data-filter="done">Avec mon expertise</button>
+            <button class="scanr-chip"         data-filter="pos">Positifs</button>
+            <button class="scanr-chip"         data-filter="neg">Négatifs</button>
         </div>
         <span class="scanr-filter-count" id="scanr-filter-count"></span>
     </div>
 
-    <?php /* ── États ── */ ?>
     <div class="scanr-loading" id="scanr-loading">
         <div class="scanr-spinner"></div>
         <p style="margin-top:.8rem">Chargement…</p>
@@ -66,14 +55,12 @@ $ajaxUrl  = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => false])
         <p>Aucun mot-clef trouvé pour cet item.</p>
     </div>
 
-    <?php /* ── Grille de cartes ── */ ?>
     <div class="scanr-kw-grid" id="scanr-kw-grid"></div>
 
 </div>
+
 <script>
-    // ── Config ────────────────────────────────────────────────────────────────
 const ITEM_ID  = <?php echo (int) $itemId; ?>;
 const AJAX_URL = <?php echo json_encode($ajaxUrl); ?>;
-
 </script>
-<?php  $this->headScript()->appendFile($assetUrl('js/scanr.js', 'Scanr'), 'text/javascript', ['defer' => 'defer']); ?>
+<?php $this->headScript()->appendFile($assetUrl('js/scanr.js', 'Scanr'), 'text/javascript', ['defer' => 'defer']); ?>

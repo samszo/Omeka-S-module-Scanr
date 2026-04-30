@@ -1,0 +1,393 @@
+(function () {
+'use strict';
+
+// ── État ─────────────────────────────────────────────────────────────────
+let keywords   = [];
+let creatorId  = 0;
+let sortState  = { field: null, dir: 1 };
+let filterState= { text: '', status: 'all' };
+
+// ── Init ─────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+    loadExpertises();
+});
+
+document.getElementById('scanr-btn-sort-title').addEventListener('click', () => sortKeywords('title'));
+document.getElementById('scanr-btn-sort-rank').addEventListener('click',  () => sortKeywords('rank'));
+document.getElementById('scanr-filter-text').addEventListener('input', function () {
+    filterState.text = this.value;
+    applyFilter();
+});
+document.querySelectorAll('#scanr-expertises .scanr-chip').forEach(btn => {
+    btn.addEventListener('click', function () {
+        filterState.status = this.dataset.filter;
+        document.querySelectorAll('#scanr-expertises .scanr-chip').forEach(b => {
+            b.className = 'scanr-chip';
+        });
+        const sfx = filterState.status !== 'all' ? '-' + filterState.status : '';
+        this.classList.add('active' + sfx);
+        applyFilter();
+    });
+});
+
+// Délégation d'événements sur la grille
+const grid = document.getElementById('scanr-kw-grid');
+grid.addEventListener('click', function (e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const kwId  = parseInt(btn.dataset.kwId);
+    const expId = parseInt(btn.dataset.expId || '0');
+    const kw    = keywords.find(k => k.value_resource_id === kwId);
+    if (!kw) return;
+    switch (btn.dataset.action) {
+        case 'create': createExpertise(kw); break;
+        case 'update': updateExpertise(kw); break;
+        case 'delete': deleteExpertise(kw); break;
+    }
+});
+grid.addEventListener('input', function (e) {
+    if (e.target.type === 'range') onSlider(e);
+});
+
+// ── Chargement (loadPerson) ───────────────────────────────────────────────
+async function loadExpertises() {
+    setLoading(true);
+    keywords = [];
+    try {
+        const res = await fetch(`${AJAX_URL}?action=load&item_id=${ITEM_ID}`);
+        const data = await res.json();
+        if (!data.ok) { showEmpty(); return; }
+
+        creatorId = data.creatorId || 0;
+        if (!creatorId) {
+            document.getElementById('scanr-no-creator').style.display = '';
+        }
+
+        keywords = data.keywords || [];
+        if (!keywords.length) { showEmpty(); return; }
+
+        sortKeywords('rank', -1);
+        renderKeywords();
+        document.getElementById('scanr-filter-bar').style.display = '';
+        document.getElementById('scanr-kw-count').style.display   = '';
+
+    } catch (e) {
+        toast('Erreur : ' + e.message, 'err');
+        showEmpty();
+    } finally {
+        setLoading(false);
+    }
+}
+
+// ── Tri (sortKeywords) ───────────────────────────────────────────────────
+function sortKeywords(field, dir = false) {
+    if (dir !== false) {
+        sortState.field = field;
+        sortState.dir   = dir;
+    } else {
+        if (sortState.field === field) sortState.dir *= -1;
+        else { sortState.field = field; sortState.dir = 1; }
+    }
+    keywords.sort((a, b) => {
+        if (field === 'title')
+            return sortState.dir * (a.display_title || '').localeCompare(b.display_title || '', 'fr');
+        return sortState.dir * (a.rank - b.rank);
+    });
+    updateSortButtons();
+    renderKeywords();
+}
+
+function updateSortButtons() {
+    const t = document.getElementById('scanr-btn-sort-title');
+    const r = document.getElementById('scanr-btn-sort-rank');
+    t.classList.toggle('active', sortState.field === 'title');
+    r.classList.toggle('active', sortState.field === 'rank');
+    t.textContent = sortState.field === 'title' ? (sortState.dir > 0 ? '↑ Titre' : '↓ Titre') : '↕ Titre';
+    r.textContent = sortState.field === 'rank'  ? (sortState.dir > 0 ? '↑ Rang'  : '↓ Rang')  : '↕ Rang';
+}
+
+// ── Rendu (renderKeywords + renderExpertise) ──────────────────────────────
+function renderKeywords() {
+    if (!keywords.length) { showEmpty(); return; }
+
+    const count = document.getElementById('scanr-kw-count');
+    count.textContent = keywords.length + ' mot' + (keywords.length > 1 ? 's' : '');
+    count.style.display = '';
+
+    grid.innerHTML = keywords.map(kw => renderKwCard(kw)).join('');
+    applyFilter();
+}
+
+function renderKwCard(kw) {
+    const myExp = kw.expertises.find(e => e.creatorId == creatorId);
+    const myRank = myExp ? myExp.rank : (kw.myRank || 0);
+
+    const expertiseRows = kw.expertises.map(e => `
+        <div class="scanr-rank-row">
+            <span class="scanr-rank-date">${esc(e.created || '')}</span>
+            <span class="scanr-rank-label">${esc(e.creatorTitle || '')}</span>
+            <span id="scanr-rv-${kw.value_resource_id}-${e.creatorId}"
+                  class="scanr-rank-val ${e.cls || ''}">${(e.sign || '') + e.rank}</span>
+        </div>`).join('');
+
+    const btnCreate = `<button class="scanr-btn scanr-btn-success"
+        data-action="create" data-kw-id="${kw.value_resource_id}"
+        style="${kw.hasExpert ? 'display:none' : ''}">Ajouter</button>`;
+
+    const btnUpdate = `<button class="scanr-btn scanr-btn-warn"
+        data-action="update" data-kw-id="${kw.value_resource_id}"
+        style="display:none">Modifier</button>`;
+
+    const delExp = (kw.expertises.find(e => e.creatorId == creatorId && e['o:id']));
+    const btnDelete = `<button class="scanr-btn scanr-btn-danger"
+        data-action="delete" data-kw-id="${kw.value_resource_id}"
+        data-exp-id="${delExp ? delExp['o:id'] : ''}"
+        style="${kw.hasExpert ? '' : 'display:none'}">Supprimer</button>`;
+
+    return `
+    <div id="scanr-kw-card-${kw.value_resource_id}" class="scanr-kw-card ${kw.cls || ''}">
+        <div class="scanr-kw-name">
+            ${esc(kw.display_title)}
+            <span id="scanr-rv-total-${kw.value_resource_id}"
+                  class="scanr-rank-val-total ${kw.cls || ''}">${(kw.sign || '') + kw.rank}</span>
+        </div>
+        <!--
+        <div class="scanr-kw-prop-badge">${esc(kw._sourceProp || '')}</div>
+        <div class="scanr-kw-meta">
+            ${kw.expertises.filter(e => e['o:id']).length
+                ? `<span style="color:var(--scanr-success)">● ${kw.expertises.length} expertise(s)</span>`
+                : `<span style="color:var(--scanr-muted)">○ Ajouter votre expertise</span>`}
+        </div>
+        -->
+        ${expertiseRows}
+        <div class="scanr-slider-wrap">
+            <div class="scanr-slider-bg"></div>
+            <div class="scanr-slider-zero"></div>
+            <input type="range" min="-100" max="100" step="1"
+                   value="${myRank}" data-kw-id="${kw.value_resource_id}">
+        </div>
+        <div class="scanr-slider-labels">
+            <span class="neg-lbl">−100</span><span>0</span><span class="pos-lbl">+100</span>
+        </div>
+        <div class="scanr-rank-button">
+            ${btnCreate}
+            ${btnUpdate}
+            ${btnDelete}
+        </div>
+    </div>`;
+}
+
+// ── Filtre (applyFilter) ─────────────────────────────────────────────────
+function applyFilter() {
+    const text = filterState.text.trim().toLowerCase();
+    let visible = 0;
+    keywords.forEach(kw => {
+        const card = document.getElementById('scanr-kw-card-' + kw.value_resource_id);
+        if (!card) return;
+        const matchText = !text || (kw.display_title || '').toLowerCase().includes(text);
+        let matchStatus = true;
+        switch (filterState.status) {
+            case 'todo': matchStatus = !kw.hasExpert; break;
+            case 'done': matchStatus =  kw.hasExpert; break;
+            case 'pos':  matchStatus =  kw.rank > 0;  break;
+            case 'neg':  matchStatus =  kw.rank <= 0; break;
+        }
+        const show = matchText && matchStatus;
+        card.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    const el = document.getElementById('scanr-filter-count');
+    el.textContent = visible < keywords.length
+        ? visible + ' / ' + keywords.length + ' affiché' + (visible > 1 ? 's' : '')
+        : '';
+}
+
+// ── Slider (onSlider) ─────────────────────────────────────────────────────
+function onSlider(e) {
+    const rank  = parseInt(e.target.value);
+    const kwId  = parseInt(e.target.dataset.kwId);
+    const kw    = keywords.find(k => k.value_resource_id === kwId);
+    if (!kw) return;
+
+    const cls  = rank > 0 ? 'pos' : rank < 0 ? 'neg' : '';
+    const sign = rank > 0 ? '+'   : '';
+    const rv   = document.getElementById(`scanr-rv-${kwId}-${creatorId}`);
+    if (rv) { rv.className = 'scanr-rank-val ' + cls; rv.textContent = sign + rank; }
+
+    document.getElementById('scanr-kw-card-' + kwId).className = 'scanr-kw-card ' + cls;
+
+    // Affiche Ajouter ou Modifier selon état
+    const card = document.getElementById('scanr-kw-card-' + kwId);
+    const btnCreate = card.querySelector('[data-action="create"]');
+    const btnUpdate = card.querySelector('[data-action="update"]');
+    if (btnCreate) btnCreate.style.display = kw.hasExpert ? 'none' : '';
+    if (btnUpdate) btnUpdate.style.display = kw.hasExpert ? '' : 'none';
+}
+
+// ── CRUD ──────────────────────────────────────────────────────────────────
+
+function getSliderRank(kwId) {
+    const card = document.getElementById('scanr-kw-card-' + kwId);
+    return card ? parseInt(card.querySelector('input[type=range]').value) : 0;
+}
+
+async function createExpertise(kw) {
+    if (!creatorId) { toast('Configurez votre ID évaluateur', 'err'); return; }
+    const rank = getSliderRank(kw.value_resource_id);
+    try {
+        setCardBusy(kw.value_resource_id, true);
+        const res = await apiPost({
+            action:      'create',
+            sourceId:    ITEM_ID,
+            expertiseId: kw.value_resource_id,
+            creatorId:   creatorId,
+            rank:        rank,
+        });
+        if (!res.ok) throw new Error(res.message || 'Erreur création');
+        // Recharge pour obtenir les données complètes du nouvel item
+        await reloadKw(kw.value_resource_id);
+        toast('Expertise ajoutée', 'ok');
+    } catch (e) {
+        toast('Erreur : ' + e.message, 'err');
+    } finally {
+        setCardBusy(kw.value_resource_id, false);
+    }
+}
+
+async function updateExpertise(kw) {
+    const myExp = kw.expertises.find(e => e.creatorId == creatorId && e['o:id']);
+    if (!myExp) { toast('Aucune expertise à modifier', 'err'); return; }
+    const rank = getSliderRank(kw.value_resource_id);
+    try {
+        setCardBusy(kw.value_resource_id, true);
+        const res = await apiPost({ action: 'update', id: myExp['o:id'], rank });
+        if (!res.ok) throw new Error(res.message || 'Erreur modification');
+        myExp.rank = rank;
+        myExp.cls  = rank > 0 ? 'pos' : 'neg';
+        myExp.sign = rank > 0 ? '+' : '';
+        refreshTotals(kw);
+        toast('Expertise modifiée', 'ok');
+    } catch (e) {
+        toast('Erreur : ' + e.message, 'err');
+    } finally {
+        setCardBusy(kw.value_resource_id, false);
+    }
+}
+
+async function deleteExpertise(kw) {
+    const myExp = kw.expertises.find(e => e.creatorId == creatorId && e['o:id']);
+    if (!myExp) { toast('Aucune expertise à supprimer', 'err'); return; }
+    if (!confirm('Supprimer cette expertise ?')) return;
+    try {
+        setCardBusy(kw.value_resource_id, true);
+        const res = await apiPost({ action: 'delete', id: myExp['o:id'] });
+        if (!res.ok) throw new Error(res.message || 'Erreur suppression');
+        kw.expertises = kw.expertises.filter(e => e['o:id'] !== myExp['o:id']);
+        kw.hasExpert  = false;
+        // Ajoute placeholder
+        kw.expertises.push({ 'o:id': null, rank: 0, cls: 'pos', sign: '', creatorId, creatorTitle: '', created: '-', kwId: kw.value_resource_id });
+        refreshTotals(kw);
+        // Restitue les boutons
+        const card = document.getElementById('scanr-kw-card-' + kw.value_resource_id);
+        if (card) {
+            card.querySelector('[data-action="create"]').style.display = '';
+            card.querySelector('[data-action="update"]').style.display = 'none';
+            card.querySelector('[data-action="delete"]').style.display = 'none';
+        }
+        toast('Expertise supprimée', 'ok');
+    } catch (e) {
+        toast('Erreur : ' + e.message, 'err');
+    } finally {
+        setCardBusy(kw.value_resource_id, false);
+    }
+}
+
+// Recharge les données d'un concept depuis le serveur
+async function reloadKw(kwId) {
+    const res  = await fetch(`${AJAX_URL}?action=load&item_id=${ITEM_ID}`);
+    const data = await res.json();
+    if (!data.ok) return;
+    const fresh = (data.keywords || []).find(k => k.value_resource_id === kwId);
+    if (!fresh) return;
+    const idx = keywords.findIndex(k => k.value_resource_id === kwId);
+    if (idx !== -1) keywords[idx] = fresh;
+    // Remplace la carte
+    const card = document.getElementById('scanr-kw-card-' + kwId);
+    if (card) card.outerHTML = renderKwCard(fresh);
+}
+
+// ── Recalcul des totaux sans re-render ────────────────────────────────────
+function refreshTotals(kw) {
+    kw.rank = kw.expertises.reduce((s, e) => s + (e.rank || 0), 0);
+    kw.cls  = kw.rank > 0 ? 'pos' : 'neg';
+    kw.sign = kw.rank > 0 ? '+' : '';
+    const tot = document.getElementById('scanr-rv-total-' + kw.value_resource_id);
+    if (tot) {
+        tot.className   = 'scanr-rank-val-total ' + kw.cls;
+        tot.textContent = kw.sign + kw.rank;
+    }
+    const card = document.getElementById('scanr-kw-card-' + kw.value_resource_id);
+    if (card) {
+        card.className = 'scanr-kw-card ' + kw.cls;
+        const rv = card.querySelector('#scanr-rv-' + kw.value_resource_id + '-' + creatorId);
+        if (rv) {
+            const myExp = kw.expertises.find(e => e.creatorId == creatorId && e['o:id']);
+            if (myExp) {
+                rv.className   = 'scanr-rank-val ' + myExp.cls;
+                rv.textContent = myExp.sign + myExp.rank;
+            }
+        }
+    }
+}
+
+// ── Busy state ────────────────────────────────────────────────────────────
+function setCardBusy(kwId, busy) {
+    const card = document.getElementById('scanr-kw-card-' + kwId);
+    if (!card) return;
+    card.querySelectorAll('button').forEach(b => { b.disabled = busy; });
+    const input = card.querySelector('input[type=range]');
+    if (input) input.disabled = busy;
+}
+
+// ── HTTP ──────────────────────────────────────────────────────────────────
+async function apiPost(body) {
+    const r = await fetch(AJAX_URL + '?action=' + body.action, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+    });
+    return r.json();
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────
+function setLoading(on) {
+    document.getElementById('scanr-loading').style.display = on ? '' : 'none';
+    document.getElementById('scanr-kw-grid').style.display = on ? 'none' : '';
+}
+
+function showEmpty() {
+    document.getElementById('scanr-empty').style.display    = '';
+    document.getElementById('scanr-kw-grid').style.display  = 'none';
+    document.getElementById('scanr-filter-bar').style.display = 'none';
+}
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+}
+
+function toast(msg, type) {
+    const c  = document.getElementById('scanr-toasts');
+    const el = document.createElement('div');
+    el.className   = 'scanr-toast ' + (type || '');
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => {
+        el.style.opacity   = '0';
+        el.style.transform = 'translateX(30px)';
+        setTimeout(() => el.remove(), 320);
+    }, 3200);
+}
+
+})();

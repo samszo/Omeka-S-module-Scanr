@@ -117,9 +117,6 @@ class Module extends AbstractModule
 
     public function getConfigForm(PhpRenderer $renderer)
     {
-        $services = $this->getServiceLocator();
-        $settings = $services->get('Omeka\Settings');
-
         return $this->getConfigFormAuto($renderer);
     }
 
@@ -188,6 +185,9 @@ class Module extends AbstractModule
 
     public function addExpertisesTab(Event $event): void
     {
+        $view = $event->getTarget();
+        $item = $this->isPerson($view);
+        if (!$item) return;
         $sectionNav = $event->getParam('section_nav');
         $sectionNav['scanr-expertises'] = 'Expertises'; // @translate
         $event->setParam('section_nav', $sectionNav);
@@ -196,11 +196,24 @@ class Module extends AbstractModule
     public function renderExpertisesTab(Event $event): void
     {
         $view = $event->getTarget();
-        $item = $view->vars()->offsetGet('item');
-        if (!$item) {
-            return;
-        }
+        $item = $this->isPerson($view);
+        if (!$item) return;
         echo $view->partial('scanr/item/expertises-tab', ['item' => $item]);
+    }
+
+    public function isPerson($view){
+        $item = $view->vars()->offsetGet('item');
+        //affiche l'onglet que pour les items d'enseignant chercheur
+        $services = $this->getServiceLocator();
+        $settings = $services->get('Omeka\Settings');
+        $classPerson = $settings->get('scanr_class_person')[0];
+        $classItem = $item->resourceClass()->term();
+        if (!$item || $classPerson != $classItem) {
+            return false;
+        }else{
+            return $item;
+        }
+
     }
 
 }

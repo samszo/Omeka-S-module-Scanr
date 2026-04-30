@@ -49,6 +49,9 @@ abstract class MainClient
     /** @var \Omeka\Api\Representation\ResourceClassRepresentation[] */
     protected array $rcs = [];
 
+    /** @var \Omeka\Api\Representation\ResourceTemplateRepresentation[] */
+    protected array $rts = [];
+
     // ── Configuration scanR (chargée depuis les settings) ─────────────────────
 
     /** @var string|null  Terme de propriété pour retrouver un item Omeka (ex: foaf:accountName) */
@@ -210,6 +213,16 @@ abstract class MainClient
                 ->getContent()[0];
         }
         return $this->rcs[$term];
+    }
+
+        public function getRt(string $label)
+    {
+        if (!isset($this->rcs[$label])) {
+            $this->rts[$label] = $this->apiOmk
+                ->search('resource_templates', ['label' => $label])
+                ->getContent()[0];
+        }
+        return $this->rts[$label];
     }
 
     // ──────────────────────────────────────────────────────────────────────────

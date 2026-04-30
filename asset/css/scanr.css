@@ -382,3 +382,25 @@
     margin-bottom: 1rem;
 }
 .scanr-no-creator a { color: var(--scanr-warn); font-weight: 600; }
+
+.scanr-btn {
+    padding: .45rem .9rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: .85rem;
+    font-weight: 500;
+    transition: filter .15s, transform .1s;
+}
+.scanr-btn-danger {
+    background: var(--scanr-danger);
+    color: #ffffff;
+}
+.scanr-btn-warn {
+    background: var(--scanr-warn);
+    color: #ffffff;
+}
+.scanr-btn-success {
+    background: var(--scanr-success);
+    color: #fff;
+}

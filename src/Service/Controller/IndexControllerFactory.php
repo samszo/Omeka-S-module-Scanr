@@ -12,6 +12,7 @@ class IndexControllerFactory implements FactoryInterface
         $formElementManager = $services->get('FormElementManager');
 
         return new IndexController(
+            $services->get('Omeka\AuthenticationService'),
             $services->get('Scanr\ApiClient'),
             $services->get('Scanr\JsonlClient'),
             $services->get('Scanr\DuckClient'),
