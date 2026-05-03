@@ -229,6 +229,7 @@ class IndexController extends AbstractActionController
         */
         switch ($creatorRole) {
             case "global_admin":
+            case "site_admin":
                 //peut tout faire
                 $creatorAllowed = true;//["create"=>true,"update"=>true,"delete"=>true,"addkeyword"=>true];
                 break;            
@@ -545,6 +546,69 @@ class IndexController extends AbstractActionController
                 $dataItem["curation:rank0"][0]["@value"]=$rank;
                 $this->api->update('items', $id, $dataItem, [], ['isPartial' => true, 'collectionAction' => 'replace']);
                 return new JsonModel(['ok' => true]);
+            } catch (\Exception $e) {
+                return new JsonModel(['ok' => false, 'message' => $e->getMessage()]);
+            }
+        }
+
+        // ── ADD KEYWORD ───────────────────────────────────────────────────
+        if ($action === 'addKeyword') {
+            $body      = json_decode($request->getContent(), true) ?? [];
+            $sourceId  = (int) ($body['sourceId']  ?? 0);
+            $conceptId = (int) ($body['conceptId'] ?? 0);
+
+            if (!$sourceId || !$conceptId) {
+                return new JsonModel(['ok' => false, 'message' => 'sourceId et conceptId requis']);
+            }
+
+            try {
+                $itemSource = $this->api->read('items', $sourceId)->getContent();
+                $creatorAllowed = $this->isUserAllowed($user, $action, $itemSource);
+                if (!$creatorAllowed) {
+                    return new JsonModel(['ok' => false, 'message' => "Vous n'êtes pas autorisé à faire cette action"]);
+                }
+
+                $conceptProps = $this->settings
+                    ? (array) $this->settings->get('scanr_properties_hasConcept', ['dcterms:subject'])
+                    : ['dcterms:subject'];
+                $prop   = $conceptProps[0] ?? 'dcterms:subject';
+                $propId = $this->apiClient->getProperty($prop)->id();
+
+                // Vérifie que le concept n'est pas déjà lié
+                foreach ($conceptProps as $cp) {
+                    foreach ($itemSource->value($cp, ['all' => true, 'default' => []]) as $v) {
+                        $vr = $v->valueResource();
+                        if ($vr && $vr->id() === $conceptId) {
+                            return new JsonModel(['ok' => false, 'message' => 'Ce mot-clef est déjà lié à cette personne']);
+                        }
+                    }
+                }
+
+                $concept = $this->api->read('items', $conceptId)->getContent();
+
+                // Ajout partiel : append la nouvelle valeur sans toucher aux existantes
+                $this->api->update('items', $sourceId, [
+                    $prop => [[
+                        'value_resource_id' => $conceptId,
+                        'type'              => 'resource:item',
+                        'property_id'       => $propId,
+                    ]],
+                ], [], ['isPartial' => true, 'collectionAction' => 'append']);
+
+                return new JsonModel([
+                    'ok'      => true,
+                    'keyword' => [
+                        'value_resource_id' => $conceptId,
+                        'display_title'     => $concept->displayTitle(),
+                        '_sourceProp'       => $prop,
+                        'rank'              => 0,
+                        'cls'               => '',
+                        'sign'              => '',
+                        'hasExpert'         => false,
+                        'myRank'            => 0,
+                        'expertises'        => [],
+                    ],
+                ]);
             } catch (\Exception $e) {
                 return new JsonModel(['ok' => false, 'message' => $e->getMessage()]);
             }

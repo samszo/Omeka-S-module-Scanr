@@ -410,6 +410,12 @@
     color: #fff;
 }
 
+/* ── Widget ajout de keyword ── */
+.scanr-add-kw {
+    margin-bottom: 1rem;
+    max-width: 420px;
+}
+
 /* ── Sélecteur de personne (autocomplétion) ── */
 .scanr-person-selector {
     margin-bottom: 1.5rem;

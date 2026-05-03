@@ -42,7 +42,7 @@ class UserSettingsFieldset extends Fieldset
         //pour vérifier le rôle de l'utilisateur et afficher la sélection des labos
         $user =  $this->auth->getIdentity();
         $role = $user->getRole();
-        if($role!="global_admin")return;
+        if($role!="global_admin" || $role!="site_admin")return;
         //pour récupérer la class des labos
         $classLabo = $this->settings->get('scanr_class_labo')[0];
         $rc = $this->api->getRc($classLabo);

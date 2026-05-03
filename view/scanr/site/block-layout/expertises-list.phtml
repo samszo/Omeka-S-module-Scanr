@@ -93,8 +93,10 @@ if($allowed){
 </div>
 
 <script>
-const AJAX_URL   = <?php echo json_encode($ajaxUrl); ?>;
-const ITEMS_DATA = <?php echo $itemsJson; ?>;
+const AJAX_URL    = <?php echo json_encode($ajaxUrl); ?>;
+const API_BASE    = <?php echo json_encode($url('api/default', ['resource' => 'items'], ['force_canonical' => true])); ?>;
+const KW_CLASS_ID = <?php echo $classConceptId; ?>;
+const ITEMS_DATA  = <?php echo $itemsJson; ?>;
 
 // Mise à jour dynamique par l'autocomplétion, lue par scanr.js
 let ITEM_ID = 0,

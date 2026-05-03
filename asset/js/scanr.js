@@ -131,12 +131,10 @@ function updateSortButtons() {
 function renderKeywords() {
     if (!keywords.length) { showEmpty(); return; }
 
-    const count = document.getElementById('scanr-kw-count');
-    count.textContent = keywords.length + ' mot' + (keywords.length > 1 ? 's' : '');
-    count.style.display = '';
-
+    updateCount();
     grid.innerHTML = keywords.map(kw => renderKwCard(kw)).join('');
     applyFilter();
+    setupAddKeyword();
 }
 
 function renderKwCard(kw) {
@@ -200,6 +198,137 @@ function renderKwCard(kw) {
             ${btnDelete}
         </div>
     </div>`;
+}
+
+// ── Ajout de keyword (autocomplete sur resource_class_id) ────────────────
+let addKwReady = false;
+
+function setupAddKeyword() {
+    if (addKwReady || !creatorAllowed) return;
+    addKwReady = true;
+
+    // Injection du widget sous la barre de filtre
+    const filterBar = document.getElementById('scanr-filter-bar');
+    const wrap = document.createElement('div');
+    wrap.id        = 'scanr-add-kw';
+    wrap.className = 'scanr-add-kw';
+    wrap.innerHTML = `
+        <div class="scanr-autocomplete-wrap">
+            <input type="text" id="scanr-add-kw-input" class="scanr-person-input"
+                   placeholder="Ajouter un mot-clef…" autocomplete="off"
+                   aria-autocomplete="list" aria-controls="scanr-add-kw-suggestions" />
+            <ul id="scanr-add-kw-suggestions" class="scanr-suggestions" role="listbox" hidden></ul>
+        </div>`;
+    filterBar.after(wrap);
+
+    const input = document.getElementById('scanr-add-kw-input');
+    const sugg  = document.getElementById('scanr-add-kw-suggestions');
+    let timer   = null;
+
+    function buildUrl(term) {
+        /*
+        const p = new URLSearchParams({
+            resource_class_id: KW_CLASS_ID,
+            fulltext_search: term,
+            per_page: 10,
+            sort_by: 'title',
+        });
+        */
+        const p = `property[0][property]=1&property[0][type]=in&property[0][text]=${term}&resource_class_id[]=${KW_CLASS_ID}`;
+
+        return API_BASE + '?' + p.toString();
+    }
+
+    function renderSugg(items) {
+        sugg.innerHTML = '';
+        // Exclut les keywords déjà présents dans la liste
+        const linked = new Set(keywords.map(k => k.value_resource_id));
+        const filtered = items.filter(i => !linked.has(i['o:id']));
+        if (!filtered.length) { sugg.hidden = true; return; }
+        filtered.forEach(function (item) {
+            const li = document.createElement('li');
+            li.setAttribute('role', 'option');
+            li.textContent   = item['o:title'] || '(sans titre)';
+            li.dataset.id    = item['o:id'];
+            li.dataset.title = li.textContent;
+            li.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+                addKeyword(item['o:id'], li.dataset.title);
+            });
+            sugg.appendChild(li);
+        });
+        sugg.hidden = false;
+    }
+
+    async function addKeyword(conceptId, title) {
+        input.value = '';
+        sugg.hidden = true;
+        try {
+            const res = await apiPost({ action: 'addKeyword', sourceId: ITEM_ID, conceptId: parseInt(conceptId, 10) });
+            if (!res.ok) { toast('Erreur : ' + (res.message || 'Ajout impossible'), 'err'); return; }
+            // Ajoute un slot placeholder pour le créateur courant
+            const kw = Object.assign({}, res.keyword, {
+                expertises: [{
+                    'o:id': null, rank: 0, cls: 'pos', sign: '',
+                    creatorId, creatorTitle, created: '-', kwId: conceptId,
+                }],
+            });
+            keywords.push(kw);
+            // Insère la carte en fin de grille
+            const tmp = document.createElement('div');
+            tmp.innerHTML = renderKwCard(kw);
+            grid.appendChild(tmp.firstElementChild);
+            updateCount();
+            toast('Mot-clef « ' + esc(title) + ' » ajouté', 'ok');
+        } catch (e) {
+            toast('Erreur : ' + e.message, 'err');
+        }
+    }
+
+    input.addEventListener('input', function () {
+        clearTimeout(timer);
+        const term = input.value.trim();
+        if (term.length < 2) { sugg.hidden = true; return; }
+        timer = setTimeout(function () {
+            fetch(buildUrl(term))
+                .then(r => r.json())
+                .then(renderSugg)
+                .catch(() => { sugg.hidden = true; });
+        }, 250);
+    });
+
+    input.addEventListener('blur', function () {
+        setTimeout(function () { sugg.hidden = true; }, 150);
+    });
+
+    input.addEventListener('keydown', function (e) {
+        const lis    = sugg.querySelectorAll('li');
+        const active = sugg.querySelector('li.scanr-active');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const next = active ? active.nextElementSibling : lis[0];
+            if (active) active.classList.remove('scanr-active');
+            if (next)   next.classList.add('scanr-active');
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prev = active ? active.previousElementSibling : lis[lis.length - 1];
+            if (active) active.classList.remove('scanr-active');
+            if (prev)   prev.classList.add('scanr-active');
+        } else if (e.key === 'Enter' && active) {
+            e.preventDefault();
+            addKeyword(active.dataset.id, active.dataset.title);
+        } else if (e.key === 'Escape') {
+            sugg.hidden = true;
+        }
+    });
+}
+
+function updateCount() {
+    const count = document.getElementById('scanr-kw-count');
+    if (count) {
+        count.textContent = keywords.length + ' mot' + (keywords.length > 1 ? 's' : '');
+        count.style.display = '';
+    }
 }
 
 // ── Filtre (applyFilter) ─────────────────────────────────────────────────

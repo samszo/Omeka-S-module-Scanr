@@ -109,13 +109,19 @@ class ExpertisesList extends AbstractBlockLayout
             throw new \Exception('Error querying : ' . $e->getMessage());
         }
 
+        $settings = $services->get('Omeka\Settings');
+        $classConcept = $settings->get('scanr_class_concept')[0];
+        $api = $services->get('Scanr\ApiClient');
+        $rc = $api->getRc($classConcept);
+
         // 4. Envoyer les résultats à la vue (.phtml)
         return $view->partial('scanr/site/block-layout/expertises-list', [
             'heading' => $heading ?: 'Mots-clefs & expertises',
             'items' => $items,
             'totalCount' => $totalCount,
             'query' => $queryParams,
-            'allowed' => true,  
+            'allowed' => true,
+            'classConceptId'=> $rc->id()  
         ]);
     }
 }

@@ -75,6 +75,8 @@ $ajaxUrl  = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => false])
     // ── Config ────────────────────────────────────────────────────────────────
 const ITEM_ID  = <?php echo (int) $itemId; ?>;
 const AJAX_URL = <?php echo json_encode($ajaxUrl); ?>;
+const API_BASE = <?php echo json_encode($url('api/default', ['resource' => 'items'], ['force_canonical' => false])); ?>;
+const KW_CLASS_ID = <?php echo $classConceptId; ?>;
 let allowed = true;
 
 </script>
