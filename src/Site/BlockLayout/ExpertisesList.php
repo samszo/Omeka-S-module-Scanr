@@ -85,6 +85,7 @@ class ExpertisesList extends AbstractBlockLayout
             return $view->partial('scanr/site/block-layout/expertises-list', [
                 'heading' => $heading ?: 'Mots-clefs & expertises',
                 'allowed' => false, 
+                'classConceptId'=> -1  
             ]);            
         }
 
