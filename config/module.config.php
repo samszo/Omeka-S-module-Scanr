@@ -48,11 +48,12 @@ return [
     'form_elements' => [
         'factories' => [
             Form\SearchForm::class => Service\Form\SearchFormFactory::class,
+            Form\UserSettingsFieldset::class  => Service\Form\UserSettingsFieldsetFactory::class,
         ],
         'invokables' => [
             Form\ConfigForm::class => Form\ConfigForm::class,
             Form\BatchEditFieldset::class => Form\BatchEditFieldset::class,
-            Form\UserSettingsFieldset::class  => Form\UserSettingsFieldset::class,
+            //Form\UserSettingsFieldset::class  => Form\UserSettingsFieldset::class,
         ],
     ],
 
@@ -65,8 +66,11 @@ return [
             'scanr_class_person' => ["foaf:Person"],
             'scanr_template_person' => [],
             'scanr_itemset_person' => [],
+            'scanr_class_labo' => [],
             'scanr_class_structure' => ["foaf:Organization"],
             'scanr_properties_hasStructure' => ["foaf:member"],
+            'scanr_properties_isInLabos' => ["dcterms:isPartOf"],
+            'scanr_properties_CasAccount' => ["foaf:account"],            
             'scanr_class_concept' => ["skos:concept"],
             'scanr_properties_conceptLabel' => ["skos:prefLabel"],
             'scanr_properties_hasConcept' => ["dcterms:subject"],
@@ -75,8 +79,7 @@ return [
             
         ],
         'user_settings' => [
-            'scanr_labos_admin' => '',
-            'scanr_creator_id'  => '',
+            'scanr_labos_admin' => []
         ],
 
     ],

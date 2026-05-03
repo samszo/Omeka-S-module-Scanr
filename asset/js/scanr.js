@@ -2,14 +2,22 @@
 'use strict';
 
 // ── État ─────────────────────────────────────────────────────────────────
-let keywords   = [];
-let creatorId  = 0;
-let sortState  = { field: null, dir: 1 };
-let filterState= { text: '', status: 'all' };
+let keywords   = [],
+    creatorId  = 0,
+    creatorTitle = "",
+    creatorAllowed  = false,
+    sortState  = { field: null, dir: 1 },
+    filterState= { text: '', status: 'all' };
+
 
 // ── Init ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
-    loadExpertises();
+    if (ITEM_ID > 0) loadExpertises();
+    if(!allowed){
+        document.getElementById('scanr-expertises-block').remove();
+        toast("Vous n'êtes pas autorisé à voir<br/>les expertises.<br/>Veuillez vous connecter.", 'err',true);    
+    } 
+
 });
 
 document.getElementById('scanr-btn-sort-title').addEventListener('click', () => sortKeywords('title'));
@@ -49,8 +57,19 @@ grid.addEventListener('input', function (e) {
     if (e.target.type === 'range') onSlider(e);
 });
 
+async function isAllowed(){
+    setLoading(true);
+    let res = await fetch(`${AJAX_URL}?action=isAllowed&item_id=${ITEM_ID}`),
+        js = await res.json();
+    setLoading(false);
+
+    return js.allowed;
+}
+
+
 // ── Chargement (loadPerson) ───────────────────────────────────────────────
 async function loadExpertises() {
+
     setLoading(true);
     keywords = [];
     try {
@@ -59,6 +78,8 @@ async function loadExpertises() {
         if (!data.ok) { showEmpty(); return; }
 
         creatorId = data.creatorId || 0;
+        creatorTitle = data.creatorTitle || "";
+        creatorAllowed = data.creatorAllowed || false;
         if (!creatorId) {
             document.getElementById('scanr-no-creator').style.display = '';
         }
@@ -132,7 +153,7 @@ function renderKwCard(kw) {
 
     const btnCreate = `<button class="scanr-btn scanr-btn-success"
         data-action="create" data-kw-id="${kw.value_resource_id}"
-        style="${kw.hasExpert ? 'display:none' : ''}">Ajouter</button>`;
+        style="${kw.hasExpert || !creatorAllowed ? 'display:none' : ''}">Ajouter</button>`;
 
     const btnUpdate = `<button class="scanr-btn scanr-btn-warn"
         data-action="update" data-kw-id="${kw.value_resource_id}"
@@ -143,6 +164,18 @@ function renderKwCard(kw) {
         data-action="delete" data-kw-id="${kw.value_resource_id}"
         data-exp-id="${delExp ? delExp['o:id'] : ''}"
         style="${kw.hasExpert ? '' : 'display:none'}">Supprimer</button>`;
+
+    const slider = !creatorAllowed ? '' : `
+        <div class="scanr-slider-wrap">
+            <div class="scanr-slider-bg"></div>
+            <div class="scanr-slider-zero"></div>
+            <input type="range" min="-100" max="100" step="1" 
+                   value="${myRank}" data-kw-id="${kw.value_resource_id}">
+        </div>
+        <div class="scanr-slider-labels">
+            <span class="neg-lbl">−100</span><span>0</span><span class="pos-lbl">+100</span>
+        </div>
+        `
 
     return `
     <div id="scanr-kw-card-${kw.value_resource_id}" class="scanr-kw-card ${kw.cls || ''}">
@@ -160,15 +193,7 @@ function renderKwCard(kw) {
         </div>
         -->
         ${expertiseRows}
-        <div class="scanr-slider-wrap">
-            <div class="scanr-slider-bg"></div>
-            <div class="scanr-slider-zero"></div>
-            <input type="range" min="-100" max="100" step="1"
-                   value="${myRank}" data-kw-id="${kw.value_resource_id}">
-        </div>
-        <div class="scanr-slider-labels">
-            <span class="neg-lbl">−100</span><span>0</span><span class="pos-lbl">+100</span>
-        </div>
+        ${slider}
         <div class="scanr-rank-button">
             ${btnCreate}
             ${btnUpdate}
@@ -204,6 +229,7 @@ function applyFilter() {
 
 // ── Slider (onSlider) ─────────────────────────────────────────────────────
 function onSlider(e) {
+    if(!creatorAllowed)return;
     const rank  = parseInt(e.target.value);
     const kwId  = parseInt(e.target.dataset.kwId);
     const kw    = keywords.find(k => k.value_resource_id === kwId);
@@ -285,15 +311,11 @@ async function deleteExpertise(kw) {
         kw.expertises = kw.expertises.filter(e => e['o:id'] !== myExp['o:id']);
         kw.hasExpert  = false;
         // Ajoute placeholder
-        kw.expertises.push({ 'o:id': null, rank: 0, cls: 'pos', sign: '', creatorId, creatorTitle: '', created: '-', kwId: kw.value_resource_id });
-        refreshTotals(kw);
-        // Restitue les boutons
+        kw.expertises.push({ 'o:id': null, rank: 0, cls: 'pos', sign: '', 'creatorId':creatorId, 'creatorTitle': creatorTitle, created: '-', kwId: kw.value_resource_id });
+        // Remplace la carte
         const card = document.getElementById('scanr-kw-card-' + kw.value_resource_id);
-        if (card) {
-            card.querySelector('[data-action="create"]').style.display = '';
-            card.querySelector('[data-action="update"]').style.display = 'none';
-            card.querySelector('[data-action="delete"]').style.display = 'none';
-        }
+        if (card) card.outerHTML = renderKwCard(kw);
+        refreshTotals(kw);
         toast('Expertise supprimée', 'ok');
     } catch (e) {
         toast('Erreur : ' + e.message, 'err');
@@ -377,17 +399,22 @@ function esc(s) {
     return d.innerHTML;
 }
 
-function toast(msg, type) {
+function toast(msg, type, persist=false) {
     const c  = document.getElementById('scanr-toasts');
     const el = document.createElement('div');
     el.className   = 'scanr-toast ' + (type || '');
-    el.textContent = msg;
+    el.innerHTML = msg;
     c.appendChild(el);
-    setTimeout(() => {
-        el.style.opacity   = '0';
-        el.style.transform = 'translateX(30px)';
-        setTimeout(() => el.remove(), 320);
-    }, 3200);
+    if(!persist){
+        setTimeout(() => {
+            el.style.opacity   = '0';
+            el.style.transform = 'translateX(30px)';
+            setTimeout(() => el.remove(), 3200);
+        }, 3200);
+    }
 }
+
+// Exposé globalement pour permettre l'appel depuis le bloc site
+window.loadExpertises = loadExpertises;
 
 })();

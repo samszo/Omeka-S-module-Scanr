@@ -2,65 +2,187 @@
 /**
  * Block layout "Expertises Scanr" — rendu côté site.
  *
- * @var \Omeka\Api\Representation\ItemRepresentation $item
  * @var string $heading
+ * @var array  $query   Paramètres de requête Omeka API pour filtrer les items (personnes)
  */
 $escape   = $this->plugin('escapeHtml');
 $url      = $this->plugin('url');
 $assetUrl = $this->plugin('assetUrl');
 
-$itemId  = $item->id();
 $ajaxUrl = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => true]);
+
+if($allowed){
+    // Sérialise les items en tableau plat [id, title] pour l'autocomplétion JS
+    $itemsData = array_map(fn($item) => [
+        'id'    => $item->id(),
+        'title' => $item->displayTitle() ?? '',
+    ], $items ?? []);
+    $itemsJson = json_encode($itemsData, JSON_UNESCAPED_UNICODE);
+}else{    
+    $itemsJson = "[]";
+}
+
 ?>
 
 <?php $this->headLink()->appendStylesheet($assetUrl('css/scanr.css', 'Scanr')); ?>
 
-<div id="scanr-toasts"></div>
+<div id="scanr-toasts" ></div>
 
-<div id="scanr-expertises" class="section">
+<div id="scanr-expertises-block">
 
-    <div id="scanr-no-creator" class="scanr-no-creator" style="display:none">
-        Configurez votre <strong>ID évaluateur</strong> dans vos paramètres utilisateur
-        (champ « ID item évaluateur ») pour pouvoir créer/modifier des expertises.
-    </div>
-
-    <div class="scanr-exp-header">
-        <h3>
-            <?php echo $escape($heading); ?>
-            <span class="scanr-kw-count" id="scanr-kw-count" style="display:none"></span>
-        </h3>
-        <div class="scanr-toolbar">
-            <button class="scanr-btn-sort" id="scanr-btn-sort-title">↕ Titre</button>
-            <button class="scanr-btn-sort" id="scanr-btn-sort-rank">↕ Rang</button>
+    <?php /* ── Sélecteur de personne ── */ ?>
+    <div class="scanr-person-selector" id="scanr-person-selector">
+        <label for="scanr-person-input"><?php echo $escape($heading); ?></label>
+        <div class="scanr-autocomplete-wrap">
+            <input
+                type="text"
+                id="scanr-person-input"
+                class="scanr-person-input"
+                placeholder="Rechercher une personne…"
+                autocomplete="off"
+                aria-autocomplete="list"
+                aria-controls="scanr-person-suggestions"
+            />
+            <ul id="scanr-person-suggestions" class="scanr-suggestions" role="listbox" hidden></ul>
         </div>
     </div>
 
-    <div class="scanr-filter-bar" id="scanr-filter-bar" style="display:none">
-        <input type="text" id="scanr-filter-text" placeholder="Filtrer les mots-clefs…" autocomplete="off" />
-        <div class="scanr-chips">
-            <button class="scanr-chip active"  data-filter="all">Tous</button>
-            <button class="scanr-chip"         data-filter="todo">Sans mon expertise</button>
-            <button class="scanr-chip"         data-filter="done">Avec mon expertise</button>
-            <button class="scanr-chip"         data-filter="pos">Positifs</button>
-            <button class="scanr-chip"         data-filter="neg">Négatifs</button>
+    <?php /* ── Panneau expertises (masqué tant qu'aucune personne n'est choisie) ── */ ?>
+    <div id="scanr-expertises" class="section" style="display:none">
+
+        <div id="scanr-no-creator" class="scanr-no-creator" style="display:none">
+            Configurez votre <strong>ID évaluateur</strong> dans vos paramètres utilisateur
+            (champ « ID item évaluateur ») pour pouvoir créer/modifier des expertises.
         </div>
-        <span class="scanr-filter-count" id="scanr-filter-count"></span>
-    </div>
 
-    <div class="scanr-loading" id="scanr-loading">
-        <div class="scanr-spinner"></div>
-        <p style="margin-top:.8rem">Chargement…</p>
-    </div>
-    <div class="scanr-empty" id="scanr-empty" style="display:none">
-        <p>Aucun mot-clef trouvé pour cet item.</p>
-    </div>
+        <div class="scanr-exp-header">
+            <h3>
+                <span id="scanr-person-name"></span>
+                <span class="scanr-kw-count" id="scanr-kw-count" style="display:none"></span>
+            </h3>
+            <div class="scanr-toolbar">
+                <button class="scanr-btn-sort" id="scanr-btn-sort-title">↕ Titre</button>
+                <button class="scanr-btn-sort" id="scanr-btn-sort-rank">↕ Rang</button>
+            </div>
+        </div>
 
-    <div class="scanr-kw-grid" id="scanr-kw-grid"></div>
+        <div class="scanr-filter-bar" id="scanr-filter-bar" style="display:none">
+            <input type="text" id="scanr-filter-text" placeholder="Filtrer les mots-clefs…" autocomplete="off" />
+            <div class="scanr-chips">
+                <button class="scanr-chip active"  data-filter="all">Tous</button>
+                <button class="scanr-chip"         data-filter="todo">Sans mon expertise</button>
+                <button class="scanr-chip"         data-filter="done">Avec mon expertise</button>
+                <button class="scanr-chip"         data-filter="pos">Positifs</button>
+                <button class="scanr-chip"         data-filter="neg">Négatifs</button>
+            </div>
+            <span class="scanr-filter-count" id="scanr-filter-count"></span>
+        </div>
+
+        <div class="scanr-loading" id="scanr-loading" style="display:none">
+            <div class="scanr-spinner"></div>
+            <p style="margin-top:.8rem">Chargement…</p>
+        </div>
+        <div class="scanr-empty" id="scanr-empty" style="display:none">
+            <p>Aucun mot-clef trouvé pour cette personne.</p>
+        </div>
+
+        <div class="scanr-kw-grid" id="scanr-kw-grid"></div>
+
+    </div>
 
 </div>
 
 <script>
-const ITEM_ID  = <?php echo (int) $itemId; ?>;
-const AJAX_URL = <?php echo json_encode($ajaxUrl); ?>;
+const AJAX_URL   = <?php echo json_encode($ajaxUrl); ?>;
+const ITEMS_DATA = <?php echo $itemsJson; ?>;
+
+// Mise à jour dynamique par l'autocomplétion, lue par scanr.js
+let ITEM_ID = 0,
+    allowed = <?php echo $allowed ? 1 : 0; ?>;
+
+(function () {
+
+    const input       = document.getElementById('scanr-person-input');
+    const suggestions = document.getElementById('scanr-person-suggestions');
+    const panel       = document.getElementById('scanr-expertises');
+    const nameSpan    = document.getElementById('scanr-person-name');
+
+    function filterItems(term) {
+        const lower = term.toLowerCase();
+        return ITEMS_DATA.filter(function (item) {
+            return item.title.toLowerCase().includes(lower);
+        }).slice(0, 10);
+    }
+
+    function renderSuggestions(items) {
+        suggestions.innerHTML = '';
+        if (!items.length) {
+            suggestions.hidden = true;
+            return;
+        }
+        items.forEach(function (item) {
+            const li = document.createElement('li');
+            li.setAttribute('role', 'option');
+            li.textContent   = item.title || '(sans titre)';
+            li.dataset.id    = item.id;
+            li.dataset.title = li.textContent;
+            li.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+                selectPerson(item.id, li.dataset.title);
+            });
+            suggestions.appendChild(li);
+        });
+        suggestions.hidden = false;
+    }
+
+    function selectPerson(id, title) {
+        ITEM_ID = parseInt(id, 10);
+        input.value = title;
+        suggestions.hidden = true;
+
+        nameSpan.textContent = title;
+        panel.style.display  = '';
+
+        document.getElementById('scanr-kw-grid').innerHTML      = '';
+        document.getElementById('scanr-loading').style.display  = '';
+        document.getElementById('scanr-empty').style.display    = 'none';
+        document.getElementById('scanr-filter-bar').style.display = 'none';
+
+        if (typeof loadExpertises === 'function') {
+            loadExpertises();
+        }
+    }
+
+    input.addEventListener('input', function () {
+        const term = input.value.trim();
+        if (term.length < 2) { suggestions.hidden = true; return; }
+        renderSuggestions(filterItems(term));
+    });
+
+    input.addEventListener('blur', function () {
+        setTimeout(function () { suggestions.hidden = true; }, 150);
+    });
+
+    input.addEventListener('keydown', function (e) {
+        const liItems = suggestions.querySelectorAll('li');
+        const active  = suggestions.querySelector('li.scanr-active');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const next = active ? active.nextElementSibling : liItems[0];
+            if (active) active.classList.remove('scanr-active');
+            if (next) next.classList.add('scanr-active');
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prev = active ? active.previousElementSibling : liItems[liItems.length - 1];
+            if (active) active.classList.remove('scanr-active');
+            if (prev) prev.classList.add('scanr-active');
+        } else if (e.key === 'Enter' && active) {
+            e.preventDefault();
+            selectPerson(active.dataset.id, active.dataset.title);
+        } else if (e.key === 'Escape') {
+            suggestions.hidden = true;
+        }
+    });
+}());
 </script>
 <?php $this->headScript()->appendFile($assetUrl('js/scanr.js', 'Scanr'), 'text/javascript', ['defer' => 'defer']); ?>

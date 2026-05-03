@@ -25,6 +25,7 @@ class Module extends AbstractModule
 
     protected $dependencies = [
         'Common',
+        'CAS',
     ];
 
     public function init(ModuleManager $moduleManager): void
@@ -35,6 +36,17 @@ class Module extends AbstractModule
     public function onBootstrap(MvcEvent $event): void
     {
         parent::onBootstrap($event);
+
+        // 1. Récupérer le gestionnaire de services et le service ACL d'Omeka
+        $acl = $event->getApplication()->getServiceManager()->get('Omeka\Acl');
+        
+        // 2. Ajouter la règle d'autorisation
+        $acl->allow(
+            null,                       // Rôle : null autorise tout le monde (y compris les visiteurs invités)
+            'Scanr\Controller\Index',   // Ressource : Le nom exact de votre contrôleur (tel qu'indiqué dans l'erreur)
+            'expertiseAjax'             // Privilège : Le nom exact de votre action (sans le suffixe "Action")
+        );
+
     }
 
     protected function preInstall(): void
@@ -198,6 +210,7 @@ class Module extends AbstractModule
         $view = $event->getTarget();
         $item = $this->isPerson($view);
         if (!$item) return;
+        if(!$this->isUser($view))return;
         echo $view->partial('scanr/item/expertises-tab', ['item' => $item]);
     }
 
@@ -213,7 +226,13 @@ class Module extends AbstractModule
         }else{
             return $item;
         }
-
     }
+    public function isUser($view){
+        $services = $this->getServiceLocator();
+        $auth = $services->get('Omeka\AuthenticationService');
+        $user =  $auth->getIdentity();
+        return $user ? true : false;
+    }
+
 
 }

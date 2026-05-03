@@ -215,6 +215,63 @@ class IndexController extends AbstractActionController
 
        // ── AJAX CRUD expertises ──────────────────────────────────────────────
 
+    public function isUserAllowed($user,$action,$item){
+        $creatorRole = $user->getRole();
+        /*vérification des droits
+        ATTENTION : les droits donnés permettent d'accéder à l'admin d'Omeka 
+        Global Administrator: full installation privileges.
+        Supervisor: robust site and content privileges.
+        Editor (Content Expert): full privileges for content creation.
+        Reviewer: robust content privileges but can only delete own content.
+        Author: create own content.
+        Researcher: search and read privileges only.
+        cf. https://omeka.org/s/docs/user-manual/admin/users/
+        */
+        switch ($creatorRole) {
+            case "global_admin":
+                //peut tout faire
+                $creatorAllowed = true;//["create"=>true,"update"=>true,"delete"=>true,"addkeyword"=>true];
+                break;            
+            case "reviewer"://le cas des chargés de valorisation et des directeurs de labo
+                //uniquement les membres des labos dont ils ont la responsabilité
+                $creatorAllowed = $this->isPersonResponsable($user,$item);
+                break;            
+            case "author"://le cas des enseignants chercheurs
+                //uniquement leurs propres expertises
+                $creatorAllowed = $this->isPersonCas($user,$item);
+                break;            
+            case "researcher":
+                //juste la visualisation des expertises
+                $creatorAllowed = false;
+                break;            
+            default:
+                $creatorAllowed = false;
+                break;
+        }
+        return $creatorAllowed;
+    }
+
+    public function isPersonResponsable($user,$item){
+
+        $this->userSettings->setTargetId($user->getId());
+        $labos = $this->userSettings->get('scanr_labos_admin',[]);
+        $prop = $this->settings->get('scanr_properties_isInLabos', ['dcterms:isPartOf'])[0];
+        $isInLabos = $item->value($prop, ['all' => true, 'default' => []]);
+        foreach ($isInLabos as $v) {
+            $vr = $v->valueResource();
+            if(in_array($vr->id(),$labos))return true;
+        }    
+        return false;
+    }
+
+    public function isPersonCas($user,$item){
+
+        $prop = $this->settings->get('scanr_properties_CasAccount', ['foaf:account'])[0];
+        $v = $item->value($prop);
+        $cas = $v ? $v->value() : "";
+        return $cas == $user->getEmail() ? true : false;
+    }
+
     public function expertiseAjaxAction()
     {
         $user =  $this->auth->getIdentity();
@@ -223,6 +280,13 @@ class IndexController extends AbstractActionController
         $action  = $this->params()->fromQuery('action')
                 ?: $this->params()->fromPost('action', '');
 
+        // ── IS ALLOWED ──────────────────────────────────────────────────────────
+        if ($action === 'isAllowed') {
+            $itemId    = (int) $this->params()->fromQuery('item_id', 0);
+            $item = $this->api->read('items', $itemId)->getContent();
+            $creatorAllowed = $this->isUserAllowed($user,$action,$item);
+            return new JsonModel(['allowed' => $creatorAllowed]);
+        }
         // ── LOAD ──────────────────────────────────────────────────────────
         if ($action === 'load') {
             $itemId    = (int) $this->params()->fromQuery('item_id', 0);
@@ -233,6 +297,7 @@ class IndexController extends AbstractActionController
 
             try {
                 $item = $this->api->read('items', $itemId)->getContent();
+                $creatorAllowed = $this->isUserAllowed($user,$action,$item);
             } catch (\Exception $e) {
                 return new JsonModel(['ok' => false, 'message' => 'Item introuvable']);
             }
@@ -358,7 +423,7 @@ class IndexController extends AbstractActionController
                     }
                 }
                 // Ajoute un slot placeholder si le créateur n'a pas encore d'expertise
-                if (!$hasExpert) {
+                if (!$hasExpert && $creatorAllowed) {
                     $expList[] = [
                         'o:id'         => null,
                         'rank'         => 0,
@@ -388,6 +453,7 @@ class IndexController extends AbstractActionController
                 'itemId'       => $itemId,
                 'creatorId'    => $creatorId,
                 'creatorTitle' => $creatorTitle,
+                'creatorAllowed' => $creatorAllowed,                
                 'rankProp'     => $rankProp,
                 'keywords'     => $keywords,
             ]);
@@ -395,11 +461,17 @@ class IndexController extends AbstractActionController
 
         // ── CREATE ────────────────────────────────────────────────────────
         if ($action === 'create') {
+
             $body      = json_decode($request->getContent(), true) ?? [];
             $sourceId  = (int) ($body['sourceId']  ?? 0);
             $expId     = (int) ($body['expertiseId'] ?? 0);
             //$creatorId = (int) ($body['creatorId']  ?? 0);
             $rank      = (int) ($body['rank']        ?? 0);
+
+            $itemSource = $this->api->read('items', $sourceId)->getContent();
+            $creatorAllowed = $this->isUserAllowed($user,$action,$itemSource);
+            if(!$creatorAllowed) return new JsonModel(['ok' => false, 'message' => "Vous n'êtes pas autorisé à faire cette action"]);
+
 
             $rtId  = $this->apiClient->getRt('Expertise')->id();
             $rcId  = $this->apiClient->getRc('valo:Expertises_all')->id();
@@ -415,9 +487,11 @@ class IndexController extends AbstractActionController
             $sourceName  = '';
             $creatorName = $user->getName();
             $expName     = '';
-            try { $sourceName  = $this->api->read('items', $sourceId)->getContent()->displayTitle(); } catch (\Exception $e) {}
+            try { $sourceName  = $itemSource->displayTitle(); } catch (\Exception $e) {}
             //try { $creatorName = $this->api->read('items', $creatorId)->getContent()->displayTitle(); } catch (\Exception $e) {}
             try { $expName     = $this->api->read('items', $expId)->getContent()->displayTitle(); } catch (\Exception $e) {}
+
+
 
             $title = sprintf(
                 'Expertise - %s = %d - pour %s fait par %s le %s',
@@ -445,6 +519,7 @@ class IndexController extends AbstractActionController
 
         // ── UPDATE ────────────────────────────────────────────────────────
         if ($action === 'update') {
+
             $body    = json_decode($request->getContent(), true) ?? [];
             $id      = (int) ($body['id']   ?? 0);
             $rank    = (int) ($body['rank']  ?? 0);
@@ -454,6 +529,9 @@ class IndexController extends AbstractActionController
 
             try {
                 $existing = $this->api->read('items', $id)->getContent();
+                $creatorAllowed = $this->isUserAllowed($user,$action,$this->getExpertiseSource($existing));
+                if(!$creatorAllowed) return new JsonModel(['ok' => false, 'message' => "Vous n'êtes pas autorisé à faire cette action"]);
+
                 $dataItem = json_decode(json_encode($existing), true);
                 $newTitle = sprintf(
                     'Expertise -> %s = %d - pour %s fait par %s le %s',
@@ -477,6 +555,10 @@ class IndexController extends AbstractActionController
             $body = json_decode($request->getContent(), true) ?? [];
             $id   = (int) ($body['id'] ?? 0);
             try {
+                $existing = $this->api->read('items', $id)->getContent();
+                $creatorAllowed = $this->isUserAllowed($user,$action,$this->getExpertiseSource($existing));
+                if(!$creatorAllowed) return new JsonModel(['ok' => false, 'message' => "Vous n'êtes pas autorisé à faire cette action"]);
+
                 $this->api->delete('items', $id);
                 return new JsonModel(['ok' => true]);
             } catch (\Exception $e) {
@@ -485,6 +567,11 @@ class IndexController extends AbstractActionController
         }
 
         return new JsonModel(['ok' => false, 'message' => 'Action inconnue : ' . $action]);
+    }
+
+    public function getExpertiseSource($exp){
+        $source = $exp->value('dcterms:source')->valueResource();
+        return $source;
     }
 
     public function associerAction()

@@ -347,11 +347,16 @@
 @keyframes scanrSpin { to { transform: rotate(360deg); } }
 
 /* ── Toasts ── */
-.scanr-toasts {
-    position: fixed;
-    top: 4rem; right: 1rem;
-    z-index: 9999;
+#scanr-toasts {
     display: flex; flex-direction: column; gap: .4rem;
+    --scanr-success: #2ecc71;
+    --scanr-danger:  #e74c3c;
+    --scanr-warn:    #f39c12;
+    --scanr-neutral: #95a5a6;
+    --scanr-muted:   #7f8c8d;
+    --scanr-border:  #dfe6e9;
+    --scanr-primary: #2c3e50;
+    --scanr-bg:      #f5f6fa;
 }
 .scanr-toast {
     padding: .65rem 1rem;
@@ -403,4 +408,70 @@
 .scanr-btn-success {
     background: var(--scanr-success);
     color: #fff;
+}
+
+/* ── Sélecteur de personne (autocomplétion) ── */
+.scanr-person-selector {
+    margin-bottom: 1.5rem;
+}
+
+.scanr-person-selector label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: .4rem;
+}
+
+.scanr-autocomplete-wrap {
+    position: relative;
+    max-width: 480px;
+}
+
+.scanr-person-input {
+    width: 100%;
+    padding: .5rem .75rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+    box-sizing: border-box;
+}
+
+.scanr-person-input:focus {
+    outline: none;
+    border-color: var(--scanr-primary, #0066cc);
+    box-shadow: 0 0 0 2px rgba(0,102,204,.2);
+}
+
+.scanr-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 260px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 8px rgba(0,0,0,.12);
+}
+
+.scanr-suggestions li {
+    padding: .5rem .75rem;
+    cursor: pointer;
+    font-size: .95rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.scanr-suggestions li:last-child {
+    border-bottom: none;
+}
+
+.scanr-suggestions li:hover,
+.scanr-suggestions li.scanr-active {
+    background: #f0f6ff;
+    color: var(--scanr-primary, #0066cc);
 }

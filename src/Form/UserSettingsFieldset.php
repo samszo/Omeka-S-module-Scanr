@@ -2,9 +2,9 @@
 
 namespace Scanr\Form;
 
-use Laminas\Form\Element;
 use Laminas\Form\Fieldset;
-use Omeka\Form\Element\ResourceSelect;
+use Common\Form\Element as CommonElement;
+use Laminas\Authentication\AuthenticationService;
 
 class UserSettingsFieldset extends Fieldset
 {
@@ -17,44 +17,69 @@ class UserSettingsFieldset extends Fieldset
         'scanr' => 'Scanr', // @translate
     ];
 
+    
+    protected $settings;
+    protected $api;
+    /**
+     * @var AuthenticationService
+     */
+    protected $auth;
+
+    // Inject the service through the constructor
+    public function __construct($settings, $api, $auth, $name = 'UserSettingsFieldset', $options = [])
+    {
+        $this->settings = $settings;
+        $this->api = $api;
+        $this->auth = $auth;
+        
+        // Always call the parent constructor!
+        parent::__construct($name, $options);
+    }
+    //
+
     public function init(): void
     {
+        //pour vérifier le rôle de l'utilisateur et afficher la sélection des labos
+        $user =  $this->auth->getIdentity();
+        $role = $user->getRole();
+        if($role!="global_admin")return;
+        //pour récupérer la class des labos
+        $classLabo = $this->settings->get('scanr_class_labo')[0];
+        $rc = $this->api->getRc($classLabo);
         $this
             ->setAttribute('id', 'scanr')
             ->setOption('element_groups', $this->elementGroups)
             ->add([
-                'name' => 'scanr_creator_id',
-                'type' => Element\Number::class,
-                'options' => [
-                    'label' => 'ID item évaluateur (dcterms:creator)', // @translate
-                    'info'  => 'Identifiant Omeka S de l\'item représentant l\'évaluateur pour le CRUD des expertises.', // @translate
-                ],
-                'attributes' => [
-                    'id'       => 'scanr_creator_id',
-                    'required' => false,
-                    'min'      => 1,
-                ],
-            ])
-            ->add([
                 'name' => 'scanr_labos_admin',
-                'type' => ResourceSelect::class,
+                'type' => CommonElement\OptionalResourceSelect::class,
                 'options' => [
                     'label' => 'Administration laboratoire(s)', // @translate
-                    'empty_option' => 'Select laboratoire(s)…', // @translate
+                    'info' => 'Sélectionnez les laboratoires dont cet utilisateur est responsable.', // @translate
+
+                    'disable_group_by_owner' => true,
+                    /*
+                    'prepend_value_options' => [
+                        '' => 'Manual selection (default)', // @translate
+                        'none' => 'No value annotation', // @translate
+                    ],
+                    */
                     'resource_value_options' => [
                         'resource' => 'items',
-                        'query' => ["resource_class_id"=>163],
-                        'option_text_callback' => fn ($resource) => $resource->displayTitle(),
+                        'query' => ["resource_class_id"=>$rc->id()],
+                        'option_text_callback' => function ($resource) {
+                            return $resource->displayTitle();
+                        },
                     ],
                 ],
                 'attributes' => [
                     'id' => 'scanr_labos_admin',
                     'class' => 'chosen-select',
+                    'data-placeholder' => 'Selectionner un/des laboratoire(s)', // @translate
                     'multiple' => true,
-                    'required' => false,
-                    'data-placeholder' => 'Select laboratoire(s)…', // @translate
+                    'value' => [],
                 ],
-            ]);
+            ])
+            ;
 
 
         ;

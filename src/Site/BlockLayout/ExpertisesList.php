@@ -9,6 +9,7 @@ use Omeka\Site\BlockLayout\AbstractBlockLayout;
 use Laminas\Form\Element;
 use Laminas\Form\Form;
 use Laminas\View\Renderer\PhpRenderer;
+use Omeka\Form\Element as OmekaElement;
 
 class ExpertisesList extends AbstractBlockLayout
 {
@@ -24,42 +25,30 @@ class ExpertisesList extends AbstractBlockLayout
         SitePageBlockRepresentation $block = null
     ): string {
         $defaults = [
-            'item_id' => '',
+            'query' => '',
             'heading' => '',
         ];
         $data = $block ? $block->data() + $defaults : $defaults;
 
-        // Recherche des items de type foaf:Person
-        $personItems = [];
-        try {
-            $settings = $view->setting();
-            $classPerson = $settings ? ($settings->get('scanr_class_person')[0] ?? 'foaf:Person') : 'foaf:Person';
-            $results = $view->api()->search('items', [
-                'resource_class_term' => $classPerson,
-                'per_page' => 500,
-                'sort_by' => 'title',
-            ])->getContent();
-            foreach ($results as $item) {
-                $personItems[$item->id()] = sprintf('[%d] %s', $item->id(), $item->displayTitle());
-            }
-        } catch (\Exception $e) {
-            // pas de filtre si erreur
-        }
-
         $form = new Form();
 
         $form->add([
-            'type' => Element\Select::class,
-            'name' => 'o:block[__blockIndex__][o:data][item_id]',
+            'type' => OmekaElement\Query::class,
+            'name' => 'o:block[__blockIndex__][o:data][query]',
             'options' => [
-                'label' => 'Personne (item)', // @translate
-                'empty_option' => '— Choisir une personne —', // @translate
-                'value_options' => $personItems,
+                'label' => 'Requête pour récupérer les expertises', // @translate
+                'info' => 'Définir la requête utilisée pour lister les personnes dont les expertises pourront être affichées', // @translate
+                'query_resource_type' => 'items',
+                'query_partial_excludelist' => [
+                    'common/advanced-search/site',
+                    'common/advanced-search/sort',
+                ],
+                'query_preview_append_query' => ['site_id' => $site->id()],
             ],
             'attributes' => [
-                'value' => $data['item_id'],
-                'class' => 'chosen-select',
+                'value' => $data['query'],
             ],
+
         ]);
 
         $form->add([
@@ -79,23 +68,54 @@ class ExpertisesList extends AbstractBlockLayout
 
     public function render(PhpRenderer $view, SitePageBlockRepresentation $block): string
     {
+
         $data = $block->data();
-        $itemId = (int) ($data['item_id'] ?? 0);
         $heading = trim($data['heading'] ?? '');
 
-        if (!$itemId) {
-            return '';
+        $services = $view->site->getServiceLocator();
+        /*
+        $settings = $services->get('Omeka\Settings');
+        $classPerson = $settings->get('scanr_class_person')[0];
+        $classItem = $item->resourceClass()->term();
+        */
+        //vérifie si l'utilisateur est autorisé à voir le block
+        $auth = $services->get('Omeka\AuthenticationService');
+        $user =  $auth->getIdentity();
+        if(!$user){
+            return $view->partial('scanr/site/block-layout/expertises-list', [
+                'heading' => $heading ?: 'Mots-clefs & expertises',
+                'allowed' => false, 
+            ]);            
         }
 
+        // 1. Récupérer toutes les données soumises par le formulaire (souvent en GET)
+        // L'équivalent sécurisé de $_GET dans Laminas
+        parse_str($data['query'] ?? '', $queryParams);
+        
+
+        // 2. Préparer le tableau de paramètres pour l'API Omeka
+        //renvoie beaucoup d'items pour limenter l'autocomplétion 
+        //$queryParams['per_page'] = $queryParams['per_page'] ?? 1000;
+        
+        // 3. Exécuter la requête API avec ces paramètres
         try {
-            $item = $view->api()->read('items', $itemId)->getContent();
+            $response = $view->api()->search('items', $queryParams);
+            $items = $response->getContent();
+            $totalCount = $response->getTotalResults();
         } catch (\Exception $e) {
-            return '';
+            // Gérer l'erreur si la requête est malformée
+            $items = [];
+            $totalCount = 0;
+            throw new \Exception('Error querying : ' . $e->getMessage());
         }
 
+        // 4. Envoyer les résultats à la vue (.phtml)
         return $view->partial('scanr/site/block-layout/expertises-list', [
-            'item' => $item,
             'heading' => $heading ?: 'Mots-clefs & expertises',
+            'items' => $items,
+            'totalCount' => $totalCount,
+            'query' => $queryParams,
+            'allowed' => true,  
         ]);
     }
 }

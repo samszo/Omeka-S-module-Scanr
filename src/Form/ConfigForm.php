@@ -143,6 +143,23 @@ class ConfigForm extends Form
                 ],
             ])
             ->add([
+                'name' => 'scanr_class_labo',
+                'type' => CommonElement\OptionalResourceClassSelect::class,
+                'options' => [
+                    'element_group' => 'editing',
+                    'label' => 'Choose Class for the laboratory', // @translate
+                    'query' => ['used' => false],
+                    'empty_option' => '',
+                    'term_as_value' => true,
+                ],
+                'attributes' => [
+                    'id' => 'scanr_class_labo',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select resource classe…', // @translate'
+                ],
+            ])
+            ->add([
                 'name' => 'scanr_class_structure',
                 'type' => CommonElement\OptionalResourceClassSelect::class,
                 'options' => [
@@ -178,6 +195,44 @@ class ConfigForm extends Form
                     'required' => true
                 ],
             ])
+            ->add([
+                'name' => 'scanr_properties_isInLabos',
+                'type' => CommonElement\OptionalPropertySelect::class,
+                'options' => [
+                    'element_group' => 'metadata_display',
+                    'label' => 'Properties for relation between person and laboratory', // @translate
+                    'term_as_value' => true,
+                    'prepend_value_options' => [
+                        'all' => 'All properties', // @translate
+                    ],
+                ],
+                'attributes' => [
+                    'id' => 'scanr_properties_isInLabos',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select properties…', // @translate
+                    'required' => true
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_properties_CasAccount' ,
+                'type' => CommonElement\OptionalPropertySelect::class,
+                'options' => [
+                    'element_group' => 'metadata_display',
+                    'label' => 'Properties for relation between person and CAS authentification', // @translate
+                    'term_as_value' => true,
+                    'prepend_value_options' => [
+                        'all' => 'All properties', // @translate
+                    ],
+                ],
+                'attributes' => [
+                    'id' => 'scanr_properties_CasAccount',
+                    'multiple' => true,
+                    'class' => 'chosen-select',
+                    'data-placeholder' => 'Select properties…', // @translate
+                    'required' => true
+                ],
+            ])           
             ->add([
                 'name' => 'scanr_class_concept',
                 'type' => CommonElement\OptionalResourceClassSelect::class,

@@ -9,8 +9,9 @@ $escape   = $this->plugin('escapeHtml');
 $url      = $this->plugin('url');
 $assetUrl = $this->plugin('assetUrl');
 
-$itemId   = $item->id();
+$itemId   = $item ? $item->id() : 0;
 $ajaxUrl  = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => false]);
+
 ?>
 
 <?php $this->headLink()->appendStylesheet($assetUrl('css/scanr.css', 'Scanr')); ?>
@@ -74,6 +75,7 @@ $ajaxUrl  = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => false])
     // ── Config ────────────────────────────────────────────────────────────────
 const ITEM_ID  = <?php echo (int) $itemId; ?>;
 const AJAX_URL = <?php echo json_encode($ajaxUrl); ?>;
+let allowed = true;
 
 </script>
 <?php  $this->headScript()->appendFile($assetUrl('js/scanr.js', 'Scanr'), 'text/javascript', ['defer' => 'defer']); ?>
