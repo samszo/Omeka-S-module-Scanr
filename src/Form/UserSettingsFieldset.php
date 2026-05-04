@@ -42,46 +42,45 @@ class UserSettingsFieldset extends Fieldset
         //pour vérifier le rôle de l'utilisateur et afficher la sélection des labos
         $user =  $this->auth->getIdentity();
         $role = $user->getRole();
-        if($role!="global_admin" || $role!="site_admin")return;
-        //pour récupérer la class des labos
-        $classLabo = $this->settings->get('scanr_class_labo')[0];
-        $rc = $this->api->getRc($classLabo);
-        $this
-            ->setAttribute('id', 'scanr')
-            ->setOption('element_groups', $this->elementGroups)
-            ->add([
-                'name' => 'scanr_labos_admin',
-                'type' => CommonElement\OptionalResourceSelect::class,
-                'options' => [
-                    'label' => 'Administration laboratoire(s)', // @translate
-                    'info' => 'Sélectionnez les laboratoires dont cet utilisateur est responsable.', // @translate
+        if($role == "global_admin" || $role == "site_admin"){
+            
+            //pour récupérer la class des labos
+            $classLabo = $this->settings->get('scanr_class_labo')[0];
+            $rc = $this->api->getRc($classLabo);
+            $this
+                ->setAttribute('id', 'scanr')
+                ->setOption('element_groups', $this->elementGroups)
+                ->add([
+                    'name' => 'scanr_labos_admin',
+                    'type' => CommonElement\OptionalResourceSelect::class,
+                    'options' => [
+                        'label' => 'Administration laboratoire(s)', // @translate
+                        'info' => 'Sélectionnez les laboratoires dont cet utilisateur est responsable.', // @translate
 
-                    'disable_group_by_owner' => true,
-                    /*
-                    'prepend_value_options' => [
-                        '' => 'Manual selection (default)', // @translate
-                        'none' => 'No value annotation', // @translate
+                        'disable_group_by_owner' => true,
+                        /*
+                        'prepend_value_options' => [
+                            '' => 'Manual selection (default)', // @translate
+                            'none' => 'No value annotation', // @translate
+                        ],
+                        */
+                        'resource_value_options' => [
+                            'resource' => 'items',
+                            'query' => ["resource_class_id"=>$rc->id()],
+                            'option_text_callback' => function ($resource) {
+                                return $resource->displayTitle();
+                            },
+                        ],
                     ],
-                    */
-                    'resource_value_options' => [
-                        'resource' => 'items',
-                        'query' => ["resource_class_id"=>$rc->id()],
-                        'option_text_callback' => function ($resource) {
-                            return $resource->displayTitle();
-                        },
+                    'attributes' => [
+                        'id' => 'scanr_labos_admin',
+                        'class' => 'chosen-select',
+                        'data-placeholder' => 'Selectionner un/des laboratoire(s)', // @translate
+                        'multiple' => true,
+                        'value' => [],
                     ],
-                ],
-                'attributes' => [
-                    'id' => 'scanr_labos_admin',
-                    'class' => 'chosen-select',
-                    'data-placeholder' => 'Selectionner un/des laboratoire(s)', // @translate
-                    'multiple' => true,
-                    'value' => [],
-                ],
-            ])
-            ;
-
-
-        ;
+                ])
+                ;
+        }
     }
 }

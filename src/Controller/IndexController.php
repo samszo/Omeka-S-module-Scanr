@@ -270,7 +270,7 @@ class IndexController extends AbstractActionController
         $prop = $this->settings->get('scanr_properties_CasAccount', ['foaf:account'])[0];
         $v = $item->value($prop);
         $cas = $v ? $v->value() : "";
-        return $cas == $user->getEmail() ? true : false;
+        return $cas == $user->getName() ? true : false;
     }
 
     public function expertiseAjaxAction()
