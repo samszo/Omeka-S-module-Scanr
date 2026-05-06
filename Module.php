@@ -228,7 +228,7 @@ class Module extends AbstractModule
         $item = $view->vars()->offsetGet('item');
         //affiche l'onglet que pour les items d'enseignant chercheur
         $classPerson = $settings->get('scanr_class_person')[0];
-        $classItem = $item->resourceClass()->term();
+        $classItem = $item->resourceClass() ?  $item->resourceClass()->term() : null;
         if (!$item || $classPerson != $classItem) {
             return false;
         }else{
