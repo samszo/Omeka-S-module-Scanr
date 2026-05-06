@@ -638,6 +638,194 @@ class IndexController extends AbstractActionController
         return $source;
     }
 
+    // ── EUR Convergences (agent IA) ───────────────────────────────────────
+
+    public function eurConvergenceAjaxAction()
+    {
+        $user = $this->auth->getIdentity();
+        if (!$user) {
+            return new JsonModel(['ok' => false, 'message' => 'Non authentifié']);
+        }
+
+        $request = $this->getRequest();
+        $action  = $this->params()->fromQuery('action')
+                ?: $this->params()->fromPost('action', '');
+
+        if ($action !== 'evaluate') {
+            return new JsonModel(['ok' => false, 'message' => 'Action inconnue : ' . $action]);
+        }
+
+        $body    = json_decode($request->getContent(), true) ?? [];
+        $itemIds = array_map('intval', $body['item_ids'] ?? []);
+
+        if (empty($itemIds)) {
+            return new JsonModel(['ok' => false, 'message' => 'Aucun chercheur fourni']);
+        }
+
+        // Limite à 50 chercheurs par appel pour rester dans les limites de tokens
+        $itemIds = array_slice($itemIds, 0, 50);
+
+        $conceptProps = $this->settings
+            ? (array) $this->settings->get('scanr_properties_hasConcept', ['dcterms:subject'])
+            : ['dcterms:subject'];
+
+        $researchers = [];
+        foreach ($itemIds as $itemId) {
+            try {
+                $item = $this->api->read('items', $itemId)->getContent();
+
+                // Mots-clefs (dcterms:subject, skos:hasTopConcept)
+                $keywords = [];
+                foreach ($conceptProps as $prop) {
+                    foreach ($item->value($prop, ['all' => true, 'default' => []]) as $v) {
+                        $vr         = $v->valueResource();
+                        $keywords[] = $vr ? $vr->displayTitle() : $v->value();
+                    }
+                }
+                foreach ($item->value('skos:hasTopConcept', ['all' => true, 'default' => []]) as $v) {
+                    $vr         = $v->valueResource();
+                    $keywords[] = $vr ? $vr->displayTitle() : $v->value();
+                }
+                $keywords = array_values(array_unique(array_filter($keywords)));
+
+                // Publications (foaf:publications)
+                $publications = [];
+                foreach ($item->value('foaf:publications', ['all' => true, 'default' => []]) as $v) {
+                    $publications[] = $v->value();
+                }
+
+                // Co-auteurs (bibo:contributorList)
+                $coAuthors = [];
+                foreach ($item->value('bibo:contributorList', ['all' => true, 'default' => []]) as $v) {
+                    $vr          = $v->valueResource();
+                    $coAuthors[] = $vr ? $vr->displayTitle() : $v->value();
+                }
+
+                $researchers[] = [
+                    'id'           => $itemId,
+                    'name'         => $item->displayTitle(),
+                    'keywords'     => array_slice($keywords,     0, 20),
+                    'publications' => array_slice($publications, 0, 10),
+                    'co_authors'   => array_slice($coAuthors,    0, 10),
+                ];
+            } catch (\Exception $e) {
+                // item introuvable ou inaccessible → ignoré
+            }
+        }
+
+        if (empty($researchers)) {
+            return new JsonModel(['ok' => false, 'message' => 'Aucun chercheur trouvé']);
+        }
+
+        $apiKey = $this->settings ? $this->settings->get('scanr_claude_api_key', '') : '';
+        if (empty($apiKey)) {
+            return new JsonModel(['ok' => false, 'message' => 'Clé API Claude non configurée. Veuillez renseigner scanr_claude_api_key dans les paramètres du module.']);
+        }
+
+        $model = $this->settings ? $this->settings->get('scanr_claude_model', 'claude-haiku-4-5-20251001') : 'claude-haiku-4-5-20251001';
+        if (empty($model)) {
+            $model = 'claude-haiku-4-5-20251001';
+        }
+
+        try {
+            $evaluations = $this->callClaudeApi($apiKey, $model, $researchers);
+            return new JsonModel(['ok' => true, 'evaluations' => $evaluations]);
+        } catch (\Exception $e) {
+            return new JsonModel(['ok' => false, 'message' => 'Erreur API Claude : ' . $e->getMessage()]);
+        }
+    }
+
+    private function callClaudeApi(string $apiKey, string $model, array $researchers): array
+    {
+        $eurs = [
+            'arts'        => 'Arts, créations, technologies & industries culturelles',
+            'transitions' => 'Transitions numériques, écologiques & économiques',
+            'care'        => 'Care – prendre soin : santé mentale, handicap, migrations',
+            'democratie'  => 'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques',
+        ];
+
+        $eursText = implode("\n", array_map(
+            fn($k, $v) => "- {$k} : {$v}",
+            array_keys($eurs),
+            array_values($eurs)
+        ));
+
+        $researchersText = '';
+        foreach ($researchers as $r) {
+            $researchersText .= "\n---\n";
+            $researchersText .= "ID: {$r['id']}\n";
+            $researchersText .= "Nom: {$r['name']}\n";
+            if (!empty($r['keywords'])) {
+                $researchersText .= "Mots-clefs: " . implode(', ', $r['keywords']) . "\n";
+            }
+            if (!empty($r['publications'])) {
+                $researchersText .= "Publications: " . implode(' | ', $r['publications']) . "\n";
+            }
+            if (!empty($r['co_authors'])) {
+                $researchersText .= "Co-auteurs: " . implode(', ', $r['co_authors']) . "\n";
+            }
+        }
+
+        $prompt = "Tu es un expert en pilotage de la science et en évaluation de la recherche académique.\n\n"
+            . "Voici les 4 Ecoles Universitaires de Recherche (EUR) :\n{$eursText}\n\n"
+            . "Pour chaque chercheur ci-dessous, évalue la convergence de ses recherches avec chacune des 4 EUR.\n"
+            . "Attribue un score de 0 (aucune convergence) à 100 (convergence totale) pour chaque EUR.\n"
+            . "Base-toi sur les mots-clefs, les titres de publications et les co-auteurs.\n\n"
+            . "Chercheurs à évaluer :{$researchersText}\n\n"
+            . "Réponds UNIQUEMENT en JSON valide, sans aucun texte autour, avec cette structure exacte :\n"
+            . '{"evaluations":[{"id":<id>,"name":"<nom>","scores":{"arts":<0-100>,"transitions":<0-100>,"care":<0-100>,"democratie":<0-100>},"justification":"<1-2 phrases>"}]}';
+
+        $payload = json_encode([
+            'model'      => $model,
+            'max_tokens' => 4096,
+            'messages'   => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+        ], JSON_UNESCAPED_UNICODE);
+
+        $ch = curl_init('https://api.anthropic.com/v1/messages');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'x-api-key: ' . $apiKey,
+                'anthropic-version: 2023-06-01',
+            ],
+            CURLOPT_TIMEOUT        => 90,
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlErr) {
+            throw new \Exception('cURL : ' . $curlErr);
+        }
+        if ($httpCode !== 200) {
+            $err = json_decode($response, true);
+            $msg = $err['error']['message'] ?? $response;
+            throw new \Exception("HTTP {$httpCode} : {$msg}");
+        }
+
+        $decoded = json_decode($response, true);
+        $content = $decoded['content'][0]['text'] ?? '';
+
+        // Extrait le JSON même si Claude ajoute un balisage Markdown
+        if (preg_match('/```(?:json)?\s*([\s\S]+?)\s*```/', $content, $m)) {
+            $content = $m[1];
+        }
+
+        $result = json_decode($content, true);
+        if (!isset($result['evaluations']) || !is_array($result['evaluations'])) {
+            throw new \Exception('Réponse Claude invalide : ' . substr($content, 0, 300));
+        }
+
+        return $result['evaluations'];
+    }
+
     public function associerAction()
     {
         set_time_limit(60);

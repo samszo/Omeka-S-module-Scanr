@@ -12,6 +12,7 @@ return [
     'block_layouts' => [
         'invokables' => [
             'scanrExpertisesList' => Site\BlockLayout\ExpertisesList::class,
+            'scanrEurConvergence' => Site\BlockLayout\EurConvergence::class,
         ],
     ],
 
@@ -76,6 +77,8 @@ return [
             'scanr_properties_hasConcept' => ["dcterms:subject"],
             'scanr_json_path' => dirname(__DIR__) . '/data/persons_denormalized.jsonl.gz',
             'scanr_json_import' => false,
+            'scanr_claude_api_key' => '',
+            'scanr_claude_model'   => 'claude-haiku-4-5-20251001',
             
         ],
         'user_settings' => [
@@ -149,6 +152,15 @@ return [
                                     'route' => '/expertise-ajax',
                                     'defaults' => [
                                         'action' => 'expertiseAjax',
+                                    ],
+                                ],
+                            ],
+                            'eur-convergence-ajax' => [
+                                'type' => 'Literal',
+                                'options' => [
+                                    'route' => '/eur-convergence-ajax',
+                                    'defaults' => [
+                                        'action' => 'eurConvergenceAjax',
                                     ],
                                 ],
                             ],

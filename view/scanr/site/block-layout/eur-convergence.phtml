@@ -1,0 +1,84 @@
+<?php
+/**
+ * Block layout "Convergences EUR Scanr".
+ *
+ * @var string  $heading
+ * @var bool    $allowed
+ * @var string  $itemsJson   JSON array [{id, title}, …]
+ * @var int     $maxPerEur
+ * @var string  $ajaxUrl
+ */
+$escape   = $this->plugin('escapeHtml');
+$assetUrl = $this->plugin('assetUrl');
+?>
+
+<?php $this->headLink()->appendStylesheet($assetUrl('css/scanr.css', 'Scanr')); ?>
+
+<div id="scanr-toasts"></div>
+
+<div id="scanr-eur-block">
+
+<?php if (!$allowed): ?>
+    <div class="scanr-eur-denied">
+        <p>Vous devez être <strong>connecté</strong> pour accéder à l'évaluation des convergences EUR.</p>
+    </div>
+<?php else: ?>
+
+    <div class="scanr-eur-header">
+        <h2 class="scanr-eur-title"><?php echo $escape($heading); ?></h2>
+        <div class="scanr-eur-toolbar">
+            <button id="scanr-eur-btn-evaluate" class="scanr-btn scanr-btn-primary">
+                Evaluer les convergences
+            </button>
+            <span class="scanr-eur-researchers-count" id="scanr-eur-count"></span>
+        </div>
+    </div>
+
+    <div class="scanr-eur-legend">
+        Un agent expert en pilotage de la science analyse les mots-clefs, publications et co-auteurs
+        de chaque chercheur [<em>valo:EnseignantChercheur</em>] et évalue la convergence avec chacune des EUR.
+    </div>
+
+    <div id="scanr-eur-loading" class="scanr-loading" style="display:none">
+        <div class="scanr-spinner"></div>
+        <p>L'agent analyse les convergences…</p>
+    </div>
+
+    <div id="scanr-eur-error" class="scanr-eur-error" style="display:none"></div>
+
+    <div id="scanr-eur-grid" class="scanr-eur-grid">
+
+        <?php
+        $eurs = [
+            ['id' => 'arts',        'label' => 'Arts, créations, technologies & industries culturelles',                               'icon' => '🎨'],
+            ['id' => 'transitions', 'label' => 'Transitions numériques, écologiques & économiques',                                    'icon' => '🌱'],
+            ['id' => 'care',        'label' => 'Care – prendre soin : santé mentale, handicap, migrations',                           'icon' => '💙'],
+            ['id' => 'democratie',  'label' => 'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques',      'icon' => '🏛️'],
+        ];
+        foreach ($eurs as $eur):
+        ?>
+        <div class="scanr-eur-col" id="scanr-eur-col-<?php echo $escape($eur['id']); ?>">
+            <div class="scanr-eur-col-header">
+                <span class="scanr-eur-icon"><?php echo $eur['icon']; ?></span>
+                <span class="scanr-eur-col-title"><?php echo $escape($eur['label']); ?></span>
+            </div>
+            <div class="scanr-eur-col-body" id="scanr-eur-body-<?php echo $escape($eur['id']); ?>">
+                <p class="scanr-eur-placeholder">Cliquez sur « Evaluer » pour lancer l'analyse.</p>
+            </div>
+        </div>
+        <?php endforeach; ?>
+
+    </div>
+
+<?php endif; ?>
+</div>
+
+<?php if ($allowed): ?>
+<script>
+const EUR_AJAX_URL  = <?php echo json_encode($ajaxUrl); ?>;
+const EUR_ITEMS     = <?php echo $itemsJson; ?>;
+const EUR_MAX       = <?php echo (int) $maxPerEur; ?>;
+const EUR_IDS       = ['arts', 'transitions', 'care', 'democratie'];
+</script>
+<?php $this->headScript()->appendFile($assetUrl('js/scanr-eur.js', 'Scanr'), 'text/javascript', ['defer' => 'defer']); ?>
+<?php endif; ?>

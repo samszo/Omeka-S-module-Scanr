@@ -481,3 +481,217 @@
     background: #f0f6ff;
     color: var(--scanr-primary, #0066cc);
 }
+
+/* ── Block Convergences EUR ──────────────────────────────────────────────── */
+
+#scanr-eur-block {
+    --eur-high:    #2ecc71;
+    --eur-mid:     #f39c12;
+    --eur-low:     #95a5a6;
+    --eur-border:  #dfe6e9;
+    --eur-shadow:  0 2px 8px rgba(0,0,0,.08);
+    --eur-bg-col:  #f8f9fc;
+    font-family: inherit;
+}
+
+.scanr-eur-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .75rem;
+    margin-bottom: .75rem;
+}
+
+.scanr-eur-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0;
+}
+
+.scanr-eur-toolbar {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+
+.scanr-btn-primary {
+    background: #2c3e50;
+    color: #fff;
+    padding: .45rem 1.1rem;
+    border: none;
+    border-radius: 6px;
+    font-size: .9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter .15s;
+}
+.scanr-btn-primary:hover  { filter: brightness(1.2); }
+.scanr-btn-primary:active { transform: scale(.98); }
+.scanr-btn-primary:disabled { opacity: .55; cursor: default; }
+
+.scanr-eur-researchers-count {
+    font-size: .82rem;
+    color: #7f8c8d;
+}
+
+.scanr-eur-legend {
+    font-size: .82rem;
+    color: #7f8c8d;
+    font-style: italic;
+    margin-bottom: 1.1rem;
+    border-left: 3px solid var(--eur-border);
+    padding-left: .75rem;
+}
+
+.scanr-eur-error {
+    background: #fdecea;
+    border: 1px solid #e74c3c;
+    border-radius: 6px;
+    padding: .75rem 1rem;
+    color: #922b21;
+    font-size: .88rem;
+    margin-bottom: 1rem;
+}
+
+/* ── Grille des colonnes EUR ── */
+.scanr-eur-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1.2rem;
+    transition: opacity .3s;
+}
+
+.scanr-eur-col {
+    background: var(--eur-bg-col);
+    border-radius: 10px;
+    border: 1px solid var(--eur-border);
+    overflow: hidden;
+    box-shadow: var(--eur-shadow);
+    display: flex;
+    flex-direction: column;
+}
+
+.scanr-eur-col-header {
+    background: #2c3e50;
+    color: #fff;
+    padding: .75rem 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+}
+
+.scanr-eur-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    line-height: 1.2;
+}
+
+.scanr-eur-col-title {
+    font-size: .82rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.scanr-eur-col-body {
+    padding: .75rem;
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+    flex: 1;
+}
+
+.scanr-eur-placeholder {
+    font-size: .82rem;
+    color: #aaa;
+    font-style: italic;
+    text-align: center;
+    padding: 1rem 0;
+    margin: 0;
+}
+
+/* ── Carte chercheur ── */
+.scanr-eur-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: .7rem .85rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,.07);
+    border-left: 4px solid var(--eur-low);
+    transition: box-shadow .2s;
+}
+.scanr-eur-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,.12); }
+.scanr-eur-card.high  { border-left-color: var(--eur-high); }
+.scanr-eur-card.mid   { border-left-color: var(--eur-mid); }
+.scanr-eur-card.low   { border-left-color: var(--eur-low); }
+
+.scanr-eur-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: .4rem;
+    margin-bottom: .3rem;
+}
+
+.scanr-eur-card-name {
+    font-weight: 600;
+    font-size: .88rem;
+    color: #2c3e50;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.scanr-eur-score {
+    font-size: 1.05rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    color: var(--eur-low);
+}
+.scanr-eur-score.high { color: var(--eur-high); }
+.scanr-eur-score.mid  { color: var(--eur-mid); }
+.scanr-eur-score.low  { color: var(--eur-low); }
+
+.scanr-eur-justification {
+    font-size: .75rem;
+    color: #6c757d;
+    margin: 0 0 .4rem;
+    line-height: 1.4;
+    font-style: italic;
+}
+
+/* ── Barre de score ── */
+.scanr-eur-score-bar {
+    height: 4px;
+    background: var(--eur-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.scanr-eur-score-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--eur-low);
+    transition: width .4s ease;
+}
+.scanr-eur-score-fill.high { background: var(--eur-high); }
+.scanr-eur-score-fill.mid  { background: var(--eur-mid); }
+.scanr-eur-score-fill.low  { background: var(--eur-low); }
+
+/* ── Accès refusé ── */
+.scanr-eur-denied {
+    background: #fff8e1;
+    border: 1px solid #f39c12;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    color: #6d4c00;
+    font-size: .9rem;
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+    .scanr-eur-grid {
+        grid-template-columns: 1fr;
+    }
+}

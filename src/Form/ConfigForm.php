@@ -13,6 +13,31 @@ class ConfigForm extends Form
     {
         $this
             ->add([
+                'name' => 'scanr_claude_api_key',
+                'type' => Element\Text::class,
+                'options' => [
+                    'label' => 'Clé API Claude (Anthropic)',
+                    'info'  => 'Clé API Anthropic pour l\'agent expert en pilotage de la science (évaluation des convergences EUR). Obtenir une clé sur https://console.anthropic.com',
+                ],
+                'attributes' => [
+                    'id'       => 'scanr_claude_api_key',
+                    'required' => false,
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_claude_model',
+                'type' => Element\Text::class,
+                'options' => [
+                    'label' => 'Modèle Claude',
+                    'info'  => 'Identifiant du modèle Claude à utiliser (par défaut : claude-haiku-4-5-20251001)',
+                ],
+                'attributes' => [
+                    'id'          => 'scanr_claude_model',
+                    'required'    => false,
+                    'placeholder' => 'claude-haiku-4-5-20251001',
+                ],
+            ])
+            ->add([
                 'name' => 'scanr_json_path',
                 'type' => Element\Text::class,
                 'options' => [
