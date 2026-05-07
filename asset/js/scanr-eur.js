@@ -64,7 +64,6 @@ function renderEvaluations(evaluations) {
     }
 
     EUR_IDS.forEach(function (eurId) {
-        // Trie les chercheurs par score décroissant pour cette EUR
         const sorted = evaluations
             .filter(function (e) { return e.scores && typeof e.scores[eurId] === 'number'; })
             .sort(function (a, b) { return b.scores[eurId] - a.scores[eurId]; })
@@ -78,9 +77,38 @@ function renderEvaluations(evaluations) {
             return;
         }
 
-        body.innerHTML = sorted.map(function (ev) {
-            return renderResearcherCard(ev, eurId);
-        }).join('');
+        // Score cumulé et moyenne
+        const cumul    = sorted.reduce(function (acc, ev) { return acc + ev.scores[eurId]; }, 0);
+        const avg      = Math.round(cumul / sorted.length);
+        const avgClass = avg >= 70 ? 'high' : avg >= 40 ? 'mid' : 'low';
+
+        // Résumé des justifications (une ligne par chercheur)
+        const justItems = sorted
+            .filter(function (ev) { return ev.justification; })
+            .map(function (ev) {
+                return '<li><strong>' + esc(ev.name || '') + '</strong> — ' + esc(ev.justification || '') + '</li>';
+            }).join('');
+
+        const summaryHtml = '<div class="scanr-eur-axis-summary">'
+            + '<div class="scanr-eur-axis-scores">'
+            +   '<span class="scanr-eur-cumul">Cumulé <strong>' + cumul + '</strong></span>'
+            +   '<span class="scanr-eur-score ' + avgClass + '">Moy. ' + avg + '/100</span>'
+            + '</div>'
+            + '<div class="scanr-eur-score-bar">'
+            +   '<div class="scanr-eur-score-fill ' + avgClass + '" style="width:' + avg + '%"></div>'
+            + '</div>'
+            + (justItems ? '<ul class="scanr-eur-just-list">' + justItems + '</ul>' : '')
+            + '</div>';
+
+        const n = sorted.length;
+        const cardsHtml = sorted.map(function (ev) { return renderResearcherCard(ev, eurId); }).join('');
+        const detailsLabel = n + ' chercheur' + (n > 1 ? 's' : '');
+
+        body.innerHTML = summaryHtml
+            + '<details class="scanr-eur-details">'
+            + '<summary>' + detailsLabel + '</summary>'
+            + cardsHtml
+            + '</details>';
     });
 
     toast('Evaluation terminée — ' + evaluations.length + ' chercheur' + (evaluations.length > 1 ? 's' : '') + ' analysé' + (evaluations.length > 1 ? 's' : ''), 'ok');
