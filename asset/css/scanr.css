@@ -679,6 +679,58 @@
 .scanr-eur-score-fill.mid  { background: var(--eur-mid); }
 .scanr-eur-score-fill.low  { background: var(--eur-low); }
 
+/* ── Axes avec échelle colorimétrique Turbo ── */
+.scanr-eur-axes {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    margin-top: .5rem;
+}
+
+.scanr-eur-axe-row {
+    background: #fff;
+    border-radius: 6px;
+    padding: .45rem .7rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    position: relative;
+    overflow: hidden;
+}
+
+.scanr-eur-axe-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    opacity: .18;
+    border-radius: 6px;
+    transition: width .5s ease;
+    pointer-events: none;
+}
+
+.scanr-eur-axe-info {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .4rem;
+}
+
+.scanr-eur-axe-name {
+    font-size: .74rem;
+    color: #2c3e50;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scanr-eur-axe-score {
+    font-size: .82rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
 /* ── Récapitulatif par axe ── */
 .scanr-eur-axis-summary {
     background: #fff;
