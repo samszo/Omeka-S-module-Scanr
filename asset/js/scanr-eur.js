@@ -101,7 +101,7 @@ function renderEvaluations(evaluations) {
         eur.avg = Math.round(eur.cumul / evals.length);
         eur.class = eur.avg >= 70 ? 'high' : eur.avg >= 40 ? 'mid' : 'low';
 
-        const summaryHtml = '<div class="scanr-eur-axis-summary">'
+        let summaryHtml = '<div class="scanr-eur-axis-summary">'
             + '<div class="scanr-eur-axis-scores">'
             +   '<span class="scanr-eur-cumul">Cumulé <strong>' + eur.cumul + '</strong></span>'
             +   '<span class="scanr-eur-score ' + eur.class + '">Moy. ' + eur.avg + '/100</span>'
@@ -109,24 +109,28 @@ function renderEvaluations(evaluations) {
             + '<div class="scanr-eur-score-bar">'
             +   '<div class="scanr-eur-score-fill ' + eur.class + '" style="width:' + eur.avg + '%"></div>'
             + '</div>'
-            + '</div>';
-
-        d3.select('#scanr-eur-body-' + eur[0]).html(summaryHtml);
-        /*
-        .selectAll("div").data(eur.axes).enter().append("div")
-            .attr()
-
-
-        const n = sorted.length;
-        const cardsHtml = sorted.map(function (ev) { return renderResearcherCard(ev, eurId); }).join('');
-        const detailsLabel = n + ' chercheur' + (n > 1 ? 's' : '');
-
-        body.innerHTML = summaryHtml
-            + '<details class="scanr-eur-details">'
-            + '<summary>' + detailsLabel + '</summary>'
-            + cardsHtml
-            + '</details>';
-        */
+            + '</div>',
+        body = d3.select('#scanr-eur-body-' + eur[0]);
+        body.html(summaryHtml);
+        
+        body.selectAll("details").data(eur.axes).enter().append("details")
+            .attr("class","scanr-eur-details")
+            .append("summary").html(axe=>{
+                axe.cumul = d3.sum(axe[1],d=>d.score);
+                axe.avg = Math.round(axe.cumul / axe[1].length);
+                axe.class = axe.avg >= 70 ? 'high' : axe.avg >= 40 ? 'mid' : 'low';
+                let html = '<div class="scanr-eur-axis-summary"><span ><strong>' + axe[0] + '</strong> '+axe[1].length+' chercheur.euse(s)</span>'
+                + '<div class="scanr-eur-axis-scores">'
+                +   '<span class="scanr-eur-cumul">Cumulé <strong>' + axe.cumul + '</strong></span>'
+                +   '<span class="scanr-eur-score ' + axe.class + '">Moy. ' + axe.avg + '/100</span>'
+                + '</div>'
+                + '<div class="scanr-eur-score-bar">'
+                +   '<div class="scanr-eur-score-fill ' + axe.class + '" style="width:' + axe.avg + '%"></div>'
+                + '</div>'
+                + '</div>';
+                
+                return html;
+            })
     });
 
     toast('Evaluation terminée — ' + evaluations.length + ' chercheur' + (evaluations.length > 1 ? 's' : '') + ' analysé' + (evaluations.length > 1 ? 's' : ''), 'ok');
