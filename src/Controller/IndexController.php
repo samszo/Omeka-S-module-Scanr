@@ -702,7 +702,7 @@ class IndexController extends AbstractActionController
                 }
                 // Co-auteurs (bibo:contributorList)
                 $axes = [];
-                foreach ($item->value('dcterms:isPartOf', ['all' => true, 'default' => []]) as $v) {
+                foreach ($item->value('dcterms:hasPart', ['all' => true, 'default' => []]) as $v) {
                     $vr          = $v->valueResource();
                     $axes[] = $vr ? $vr->displayTitle() : $v->value();
                 }
@@ -744,6 +744,7 @@ class IndexController extends AbstractActionController
 
     private function callClaudeApi(string $apiKey, string $model, array $researchers): array
     {
+        set_time_limit(320);
         $eurs = [
             'arts'        => 'Arts, créations, technologies & industries culturelles',
             'transitions' => 'Transitions numériques, écologiques & économiques',
@@ -779,12 +780,13 @@ class IndexController extends AbstractActionController
 
             $existe = $this->findExistEval($agent->id(),$r['id']);
             if(!empty($existe)){
-                $eval = $existe[0]->value('curation:data')->value();
-                $evaluations[]=json_decode($eval, true);
+                $eval = json_decode($existe[0]->value('curation:data')->value(), true);
+                $eval["axes"]=$r["axes"];
+                $evaluations[]=$eval;
                 continue;
             }
 
-            $researchersText .= "\n---\n";
+            $researchersText = "\n---\n";
             $researchersText .= "ID: {$r['id']}\n";
             $researchersText .= "Nom: {$r['name']}\n";
             if (!empty($r['keywords']))     $researchersText .= "Mots-clefs: "   . implode(', ', $r['keywords'])     . "\n";
@@ -840,6 +842,8 @@ class IndexController extends AbstractActionController
             }
 
             $eval = $result['evaluations'][0];
+            //ajoute les axes
+            $eval["axes"]=$r["axes"];
 
             // ── Persistance Omeka (non bloquante) ─────────────────────────────
             try {
