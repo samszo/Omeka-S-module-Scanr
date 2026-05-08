@@ -70,44 +70,65 @@ async function runEvaluation() {
     }
 }
 
+// ── Échelle colorimétrique Turbo ─────────────────────────────────────────
+function turboColor(score) {
+    return d3.interpolateTurbo(Math.max(0, Math.min(1, score / 100)));
+}
+
 // ── Rendu des résultats ───────────────────────────────────────────────────
 function renderEvaluations(evaluations) {
     if (!evaluations.length) {
         showError('Aucun résultat retourné par l\'agent.');
         return;
     }
-    console.log(evaluations);
 
     let flatEvals = [];
-    evaluations.forEach(e=>{
-        e.axes.forEach(a=>{
-            flatEvals.push({'id':e.id,'axe':a,'eur':'arts','score':e.scores.arts});
-            flatEvals.push({'id':e.id,'axe':a,'eur':'care','score':e.scores.care});
-            flatEvals.push({'id':e.id,'axe':a,'eur':'democratie','score':e.scores.democratie});
-            flatEvals.push({'id':e.id,'axe':a,'eur':'transitions','score':e.scores.transitions});
-        })
-    })
-    console.log(flatEvals);
+    evaluations.forEach(e => {
+        e.axes.forEach(a => {
+            flatEvals.push({'id': e.id, 'axe': a, 'eur': 'arts',        'score': e.scores.arts});
+            flatEvals.push({'id': e.id, 'axe': a, 'eur': 'care',        'score': e.scores.care});
+            flatEvals.push({'id': e.id, 'axe': a, 'eur': 'democratie',  'score': e.scores.democratie});
+            flatEvals.push({'id': e.id, 'axe': a, 'eur': 'transitions', 'score': e.scores.transitions});
+        });
+    });
 
+    let grEurAxes = Array.from(d3.group(flatEvals, d => d.eur, d => d.axe));
 
-    let grEurAxes = Array.from(d3.group(flatEvals, (d) => d.eur, (d) => d.axe)),
-        sumEurAxes = Array.from(d3.rollup(flatEvals, v => d3.sum(v, d => d.score), d => d.eur, d => d.axe));
+    grEurAxes.forEach(eur => {
+        let evals = flatEvals.filter(e => e.eur === eur[0]);
+        eur.axes  = Array.from(eur[1]);
+        eur.cumul = d3.sum(evals, d => d.score);
+        eur.avg   = Math.round(eur.cumul / evals.length);
 
+        const eurColor = turboColor(eur.avg);
 
-    grEurAxes.forEach(eur=> {
-        let evals = flatEvals.filter(e=>e.eur==eur[0]);
-        eur.axes = Array.from(eur[1]);
-        eur.cumul = d3.sum(evals,d=>d.score);
-        eur.avg = Math.round(eur.cumul / evals.length);
-        eur.class = eur.avg >= 70 ? 'high' : eur.avg >= 40 ? 'mid' : 'low';
+        // Colorier le bas de l'en-tête de colonne avec l'échelle Turbo de l'EUR
+        const bodyEl   = document.getElementById('scanr-eur-body-' + eur[0]);
+        const headerEl = bodyEl && bodyEl.parentElement.querySelector('.scanr-eur-col-header');
+        if (headerEl) headerEl.style.borderBottom = '4px solid ' + eurColor;
+
+        // Construire les lignes par axe avec leur propre couleur Turbo
+        const axesHtml = eur.axes.map(axe => {
+            const axeName = axe[0];
+            const axeAvg  = Math.round(d3.mean(axe[1], d => d.score));
+            const axeColor = turboColor(axeAvg);
+            return '<div class="scanr-eur-axe-row">'
+                + '<div class="scanr-eur-axe-bar" style="width:' + axeAvg + '%;background:' + axeColor + '"></div>'
+                + '<div class="scanr-eur-axe-info">'
+                +   '<span class="scanr-eur-axe-name">' + esc(axeName) + '</span>'
+                +   '<span class="scanr-eur-axe-score" style="color:' + axeColor + '">' + axeAvg + '</span>'
+                + '</div>'
+                + '</div>';
+        }).join('');
 
         let summaryHtml = '<div class="scanr-eur-axis-summary">'
             + '<div class="scanr-eur-axis-scores">'
             +   '<span class="scanr-eur-cumul">Cumulé <strong>' + eur.cumul + '</strong></span>'
-            +   '<span class="scanr-eur-score ' + eur.class + '">Moy. ' + eur.avg + '/100</span>'
+            +   '<span class="scanr-eur-score" style="color:' + eurColor + '">Moy. ' + eur.avg + '/100</span>'
             + '</div>'
             + '<div class="scanr-eur-score-bar">'
-            +   '<div class="scanr-eur-score-fill ' + eur.class + '" style="width:' + eur.avg + '%"></div>'
+            +   '<div class="scanr-eur-score-fill" style="width:' + eur.avg + '%;background:' + eurColor + '"></div>'
+            + '</div>'
             + '</div>'
             + '</div>',
         body = d3.select('#scanr-eur-body-' + eur[0]);
