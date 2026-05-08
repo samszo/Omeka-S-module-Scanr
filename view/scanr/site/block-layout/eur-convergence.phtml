@@ -48,32 +48,13 @@ $assetUrl = $this->plugin('assetUrl');
 
     <div id="scanr-eur-grid" class="scanr-eur-grid">
 
-        <?php
-        $eurs = [
-            ['id' => 'arts',        'label' => 'Arts, créations, technologies & industries culturelles',                               'icon' => '🎨'],
-            ['id' => 'transitions', 'label' => 'Transitions numériques, écologiques & économiques',                                    'icon' => '🌱'],
-            ['id' => 'care',        'label' => 'Care – prendre soin : santé mentale, handicap, migrations',                           'icon' => '💙'],
-            ['id' => 'democratie',  'label' => 'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques',      'icon' => '🏛️'],
-        ];
-        foreach ($eurs as $eur):
-        ?>
-        <div class="scanr-eur-col" id="scanr-eur-col-<?php echo $escape($eur['id']); ?>">
-            <div class="scanr-eur-col-header">
-                <span class="scanr-eur-icon"><?php echo $eur['icon']; ?></span>
-                <span class="scanr-eur-col-title"><?php echo $escape($eur['label']); ?></span>
-            </div>
-            <div class="scanr-eur-col-body" id="scanr-eur-body-<?php echo $escape($eur['id']); ?>">
-                <p class="scanr-eur-placeholder">Cliquez sur « Evaluer » pour lancer l'analyse.</p>
-            </div>
-        </div>
-        <?php endforeach; ?>
-
     </div>
 
 <?php endif; ?>
 </div>
 
 <?php if ($allowed): ?>
+<?php $this->headScript()->appendFile($assetUrl('js/d3.min.js', 'Scanr'), 'text/javascript', ['defer' => 'defer']); ?>
 <script>
 const EUR_AJAX_URL  = <?php echo json_encode($ajaxUrl); ?>;
 const EUR_ITEMS     = <?php echo $itemsJson; ?>;

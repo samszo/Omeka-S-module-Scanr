@@ -700,6 +700,12 @@ class IndexController extends AbstractActionController
                     $vr          = $v->valueResource();
                     $coAuthors[] = $vr ? $vr->displayTitle() : $v->value();
                 }
+                // Co-auteurs (bibo:contributorList)
+                $axes = [];
+                foreach ($item->value('dcterms:isPartOf', ['all' => true, 'default' => []]) as $v) {
+                    $vr          = $v->valueResource();
+                    $axes[] = $vr ? $vr->displayTitle() : $v->value();
+                }
 
                 $researchers[] = [
                     'id'           => $itemId,
@@ -707,6 +713,7 @@ class IndexController extends AbstractActionController
                     'keywords'     => array_slice($keywords,     0, 20),
                     'publications' => array_slice($publications, 0, 10),
                     'co_authors'   => array_slice($coAuthors,    0, 10),
+                    'axes'   => array_slice($axes,    0, 10),
                 ];
             } catch (\Exception $e) {
                 // item introuvable ou inaccessible → ignoré
@@ -743,7 +750,7 @@ class IndexController extends AbstractActionController
             'care'        => 'Care – prendre soin : santé mentale, handicap, migrations',
             'democratie'  => 'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques',
         ];
-
+        $evaluations=[];
         $eursText = implode("\n", array_map(
             fn($k, $v) => "- {$k} : {$v}",
             array_keys($eurs),
@@ -760,176 +767,219 @@ class IndexController extends AbstractActionController
             . "Format de réponse (JSON strict, aucun texte autour) :\n"
             . '{"evaluations":[{"id":<id>,"name":"<nom>","scores":{"arts":<0-100>,"transitions":<0-100>,"care":<0-100>,"democratie":<0-100>},"justification":"<1-2 phrases>"}]}';
 
+        // ── Paramètres API (stockés dans dctype:Service) ──────────────────
+        $apiParams = ['model' => $model, 'max_tokens' => 4096];
+        $apiUrl    = 'https://api.anthropic.com/v1/messages';
+
+        $agent = $this->findOrCreateAgent("expert EUR Convergences", $model, $apiUrl, $promptTemplate, $apiParams);
+
         // ── Données chercheurs (partie variable du prompt) ────────────────
         $researchersText = '';
         foreach ($researchers as $r) {
+
+            $existe = $this->findExistEval($agent->id(),$r['id']);
+            if(!empty($existe)){
+                $eval = $existe[0]->value('curation:data')->value();
+                $evaluations[]=json_decode($eval, true);
+                continue;
+            }
+
             $researchersText .= "\n---\n";
             $researchersText .= "ID: {$r['id']}\n";
             $researchersText .= "Nom: {$r['name']}\n";
             if (!empty($r['keywords']))     $researchersText .= "Mots-clefs: "   . implode(', ', $r['keywords'])     . "\n";
             if (!empty($r['publications'])) $researchersText .= "Publications: " . implode(' | ', $r['publications']) . "\n";
             if (!empty($r['co_authors']))   $researchersText .= "Co-auteurs: "   . implode(', ', $r['co_authors'])   . "\n";
-        }
 
-        $prompt = $promptTemplate . "\n\nChercheurs à évaluer :" . $researchersText;
+            $prompt = $promptTemplate . "\n\nChercheurs à évaluer :" . $researchersText;
 
-        // ── Paramètres API (stockés dans dctype:Service) ──────────────────
-        $apiParams = ['model' => $model, 'max_tokens' => 4096];
-        $apiUrl    = 'https://api.anthropic.com/v1/messages';
 
-        $payload = json_encode(array_merge($apiParams, [
-            'messages' => [['role' => 'user', 'content' => $prompt]],
-        ]), JSON_UNESCAPED_UNICODE);
+            $payload = json_encode(array_merge($apiParams, [
+                'messages' => [['role' => 'user', 'content' => $prompt]],
+            ]), JSON_UNESCAPED_UNICODE);
 
-        // ── Appel API Claude ──────────────────────────────────────────────
-        $ch = curl_init($apiUrl);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $payload,
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'x-api-key: ' . $apiKey,
-                'anthropic-version: 2023-06-01',
-            ],
-            CURLOPT_TIMEOUT => 90,
-        ]);
+            // ── Appel API Claude ──────────────────────────────────────────────
+            $ch = curl_init($apiUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => $payload,
+                CURLOPT_HTTPHEADER     => [
+                    'Content-Type: application/json',
+                    'x-api-key: ' . $apiKey,
+                    'anthropic-version: 2023-06-01',
+                ],
+                CURLOPT_TIMEOUT => 90,
+            ]);
 
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr  = curl_error($ch);
-        curl_close($ch);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlErr  = curl_error($ch);
+            curl_close($ch);
 
-        if ($curlErr) {
-            throw new \Exception('cURL : ' . $curlErr);
-        }
-        if ($httpCode !== 200) {
-            $err = json_decode($response, true);
-            $msg = $err['error']['message'] ?? $response;
-            throw new \Exception("HTTP {$httpCode} : {$msg}");
-        }
+            if ($curlErr) {
+                throw new \Exception('cURL : ' . $curlErr);
+            }
+            if ($httpCode !== 200) {
+                $err = json_decode($response, true);
+                $msg = $err['error']['message'] ?? $response;
+                throw new \Exception("HTTP {$httpCode} : {$msg}");
+            }
 
-        $decoded = json_decode($response, true);
-        $content = $decoded['content'][0]['text'] ?? '';
+            $decoded = json_decode($response, true);
+            $content = $decoded['content'][0]['text'] ?? '';
 
-        // Extrait le JSON même si Claude entoure d'un bloc Markdown
-        if (preg_match('/```(?:json)?\s*([\s\S]+?)\s*```/', $content, $m)) {
-            $content = $m[1];
-        }
+            // Extrait le JSON même si Claude entoure d'un bloc Markdown
+            if (preg_match('/```(?:json)?\s*([\s\S]+?)\s*```/', $content, $m)) {
+                $content = $m[1];
+            }
 
-        $result = json_decode($content, true);
-        if (!isset($result['evaluations']) || !is_array($result['evaluations'])) {
-            throw new \Exception('Réponse Claude invalide : ' . substr($content, 0, 300));
-        }
+            $result = json_decode($content, true);
+            if (!isset($result['evaluations']) || !is_array($result['evaluations'])) {
+                throw new \Exception('Réponse Claude invalide : ' . substr($content, 0, 300));
+            }
 
-        $evaluations = $result['evaluations'];
+            $eval = $result['evaluations'][0];
 
-        // ── Persistance Omeka (non bloquante) ─────────────────────────────
-        try {
-            $serviceId = $this->findOrCreateEurService($model, $apiUrl, $promptTemplate, $apiParams);
-            $this->createEurEvaluationItem($serviceId, $evaluations, $researchers);
-        } catch (\Exception $e) {
-            // Ne bloque pas la réponse si la persistance échoue
-            error_log('[Scanr] EUR persistance Omeka : ' . $e->getMessage());
+            // ── Persistance Omeka (non bloquante) ─────────────────────────────
+            try {
+                $this->createEurEvaluationItem($agent, $eval);
+            } catch (\Exception $e) {
+                // Ne bloque pas la réponse si la persistance échoue
+                error_log('[Scanr] EUR persistance Omeka : ' . $e->getMessage());
+            }
+            $evaluations[]=$eval;
         }
 
         return $evaluations;
     }
 
     /**
+     * Recherche l'évaluation pour le chercheur 
+     * L'unicité est garantie par la combinaison agent + source .
+     */
+    private function findExistEval(
+        string $idAgent,
+        string $idSource
+    ) {
+        // Recherche un agen existant identifié par le modèle utilisé
+        $rcValo = $this->apiClient->getRc('valo:Expertises_all');
+        $pSrc     = $this->apiClient->getProperty('dcterms:source')->id();
+        $pCrea     = $this->apiClient->getProperty('dcterms:creator')->id();
+
+        $existing = $this->api->search('items', [
+            'resource_class_id' => [$rcValo->id()],
+            'property'          => [[
+                'joiner'   => 'and',
+                'property' => $pSrc,
+                'type'     => 'res',
+                'text'     => $idSource,
+            ],
+            [
+                'joiner'   => 'and',
+                'property' => $pCrea,
+                'type'     => 'res',
+                'text'     => $idAgent,
+            ]],
+            'per_page' => 1,
+        ])->getContent();
+
+        return $existing;
+    }
+
+    /**
      * Trouve ou crée un item dctype:Service décrivant l'agent IA EUR.
      * L'unicité est garantie par la combinaison modèle + URL du service.
      */
-    private function findOrCreateEurService(
+    private function findOrCreateAgent(
+        string $action,
         string $model,
         string $apiUrl,
         string $promptTemplate,
         array  $apiParams
-    ): int {
-        // Recherche un service existant identifié par le modèle utilisé
-        $rcService = $this->apiClient->getRc('dctype:Service');
-        $pType     = $this->apiClient->getProperty('dcterms:type')->id();
+    ) {
+        // Recherche un agent existant identifié par le modèle utilisé
+        $rcAgent = $this->apiClient->getRc('foaf:Agent');
+        $pTitle = $this->apiClient->getProperty('dcterms:title')->id();
+        $title = "Agent ".$action." [{$model}]";
 
         $existing = $this->api->search('items', [
-            'resource_class_id' => [$rcService->id()],
+            'resource_class_id' => [$rcAgent->id()],
             'property'          => [[
                 'joiner'   => 'and',
-                'property' => $pType,
+                'property' => $pTitle,
                 'type'     => 'eq',
-                'text'     => $model,
+                'text'     => $title,
             ]],
             'per_page' => 1,
         ])->getContent();
 
         if (!empty($existing)) {
-            return $existing[0]->id();
+            return $existing[0];
         }
 
         // Crée le service
-        $pTitle = $this->apiClient->getProperty('dcterms:title')->id();
+        $pType  = $this->apiClient->getProperty('dcterms:type')->id();
         $pDesc  = $this->apiClient->getProperty('dcterms:description')->id();
         $pConf  = $this->apiClient->getProperty('dcterms:conformsTo')->id();
         $pRef   = $this->apiClient->getProperty('dcterms:isReferencedBy')->id();
 
         $data = [
-            'o:resource_class'    => ['o:id' => $rcService->id()],
-            'dcterms:title'       => [['@value' => "Agent expert EUR Convergences [{$model}]", 'type' => 'literal',    'property_id' => $pTitle]],
+            'o:resource_class'    => ['o:id' => $rcAgent->id()],
+            'dcterms:title'       => [['@value' => $title, 'type' => 'literal',    'property_id' => $pTitle]],
             'dcterms:type'        => [['@value' => $model,                                      'type' => 'literal',    'property_id' => $pType]],
             'dcterms:description' => [['@value' => $promptTemplate,                             'type' => 'literal',    'property_id' => $pDesc]],
             'dcterms:conformsTo'  => [['@value' => json_encode($apiParams, JSON_UNESCAPED_UNICODE), 'type' => 'literal', 'property_id' => $pConf]],
             'dcterms:isReferencedBy' => [['@id' => $apiUrl, 'o:label' => 'Anthropic Messages API', 'type' => 'uri',    'property_id' => $pRef]],
         ];
 
-        $item = $this->api->create('items', $data, [], ['continueOnError' => true])->getContent();
-        return $item->id();
+        return $this->api->create('items', $data, [], ['continueOnError' => true])->getContent();
     }
 
     /**
      * Crée un item valo:Expertises_all enregistrant le résultat complet
      * de l'évaluation, avec une value annotation par chercheur (scores + justification).
      */
-    private function createEurEvaluationItem(int $serviceId, array $evaluations, array $researchers): void
+    private function createEurEvaluationItem($agent, array $eval): void
     {
         $rcId   = $this->apiClient->getRc('valo:Expertises_all')->id();
         $pTitle = $this->apiClient->getProperty('dcterms:title')->id();
         $pSrc   = $this->apiClient->getProperty('dcterms:source')->id();
         $pDesc  = $this->apiClient->getProperty('dcterms:description')->id();
         $pSubj  = $this->apiClient->getProperty('dcterms:subject')->id();
+        $pCrea  = $this->apiClient->getProperty('dcterms:creator')->id();
         $pRank  = $this->apiClient->getProperty('curation:rank')->id();
+        $pData = $this->apiClient->getProperty('curation:data')->id();
 
-        $title = 'Evaluation EUR convergences — ' . (new \DateTime())->format('d/m/Y H:i');
+        $title = "Evaluation EUR convergences : ".$agent->displayTitle()." —> ".$eval["name"]." — " . (new \DateTime())->format('d/m/Y H:i');
 
         $data = [
             'o:resource_class'    => ['o:id' => $rcId],
             'dcterms:title'       => [['@value' => $title, 'type' => 'literal', 'property_id' => $pTitle]],
-            'dcterms:source'      => [['value_resource_id' => $serviceId, 'type' => 'resource:item', 'property_id' => $pSrc]],
-            'dcterms:description' => [['@value' => json_encode($evaluations, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'type' => 'literal', 'property_id' => $pDesc]],
+            'dcterms:source'      => [['value_resource_id' => $eval["id"], 'type' => 'resource:item', 'property_id' => $pSrc]],
+            'dcterms:creator'      => [['value_resource_id' => $agent->id(), 'type' => 'resource:item', 'property_id' => $pCrea]],
+            'dcterms:description' => [['@value' => $eval["justification"], 'type' => 'literal', 'property_id' => $pDesc]],
             'dcterms:subject'     => [],
+            'curation:data' => [['@value' => json_encode($eval, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'type' => 'literal', 'property_id' => $pData]],
         ];
 
-        foreach ($evaluations as $ev) {
-            $researcherId = (int) ($ev['id'] ?? 0);
-            if (!$researcherId) {
-                continue;
-            }
+         $data['dcterms:subject']=[];
 
-            // Les scores sont stockés en JSON dans curation:rank pour conserver les 4 valeurs
-            $scoresJson    = json_encode($ev['scores'] ?? [], JSON_UNESCAPED_UNICODE);
-            $justification = $ev['justification'] ?? '';
+        foreach ($eval["scores"] as $k=>$v) {
 
             $data['dcterms:subject'][] = [
-                'value_resource_id' => $researcherId,
-                'type'              => 'resource:item',
+                '@value' => $k." = ".$v,
+                'type'              => 'literal',
                 'property_id'       => $pSubj,
                 '@annotation'       => [
                     'curation:rank'       => [[
                         'property_id' => $pRank,
-                        '@value'      => $scoresJson,
+                        '@value'      => $v."",
                         'type'        => 'literal',
                     ]],
                     'dcterms:description' => [[
                         'property_id' => $pDesc,
-                        '@value'      => $justification,
+                        '@value'      => $k,
                         'type'        => 'literal',
                     ]],
                 ],
@@ -986,5 +1036,53 @@ class IndexController extends AbstractActionController
     }
 
 
+    /**
+     * Envoie le profil au LLM Gemini pour générer l'analyse stratégique.
+     */
+    private function generateEvaluationWithGemini(array $researcherData, string $eursText): string
+    {
+        $systemPrompt = "Tu es un expert en pilotage stratégique de la recherche et de l'innovation. " .
+            "Ta mission est d'évaluer le profil suivant (fourni en JSON-LD) pour son intégration dans les " .
+            "Écoles Universitaires de Recherche (EUR)\n"
+            . "Voici les 4 Ecoles Universitaires de Recherche (EUR) :\n{$eursText}\n\n"
+            . "Pour chaque chercheur fourni, évalue la convergence de ses recherches avec chacune des 4 EUR.\n"
+            . "Attribue un score de 0 (aucune convergence) à 100 (convergence totale) pour chaque EUR.\n".
+            "Analyse les mots-clefs (skos:hasTopConcept), les publications (foaf:publications) et le réseau (bibo:contributorList).\n".
+            "Argumente le score par : liste des forces, les points de vigilance et les recommandations d'intégration.\n"
+            . "Format de réponse (JSON strict, aucun texte autour) :\n"
+            . '{"evaluations":[{"id":<id>,"name":"<nom>","scores":{"arts":<0-100>,"transitions":<0-100>,"care":<0-100>,"democratie":<0-100>},"argumentation":{"forces":<1-2 phrases>, "vigilance":<1-2 phrases>,"recommandations":<1-2 phrases>"}]}';
+
+            
+        $payload = [
+            'contents' => [
+                [
+                    'parts' => [
+                        ['text' => $systemPrompt . "\n\nVoici le profil JSON :\n" . Json::encode($researcherData)]
+                    ]
+                ]
+            ],
+            // Paramètres optionnels pour contrôler la génération
+            'generationConfig' => [
+                'temperature' => 0.4, // Assez bas pour une évaluation analytique et factuelle
+            ]
+        ];
+
+        $client = new Client($this->geminiApiUrl . '?key=' . $this->geminiApiKey);
+        $client->setMethod(Request::METHOD_POST);
+        $client->setHeaders([
+            'Content-Type' => 'application/json',
+        ]);
+        $client->setRawBody(Json::encode($payload));
+
+        $response = $client->send();
+
+        if (!$response->isSuccess()) {
+            throw new Exception("Erreur de l'API Gemini : " . $response->getBody());
+        }
+
+        $result = Json::decode($response->getBody(), Json::TYPE_ARRAY);
+        
+        return $result['candidates'][0]['content']['parts'][0]['text'] ?? "Erreur : aucune évaluation générée.";
+    }
 
 }

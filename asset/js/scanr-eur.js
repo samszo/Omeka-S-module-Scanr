@@ -1,13 +1,15 @@
+
 (function () {
 'use strict';
 
 // ── Constantes EUR ────────────────────────────────────────────────────────
-const EUR_LABELS = {
-    arts:        'Arts, créations, technologies & industries culturelles',
-    transitions: 'Transitions numériques, écologiques & économiques',
-    care:        'Care – prendre soin : santé mentale, handicap, migrations',
-    democratie:  'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques',
-};
+const EURS = [
+    {'id':'arts', 'label':'Arts, créations, technologies & industries culturelles','icon':'🎨'},
+    {'id':'transitions', 'label':'Transitions numériques, écologiques & économiques','icon':'🌱'},
+    {'id':'care', 'label':'Care – prendre soin : santé mentale, handicap, migrations','icon':'💙'},
+    {'id':'democratie', 'label':'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques','icon':'🏛️'}
+];
+
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
@@ -20,6 +22,18 @@ document.addEventListener('DOMContentLoaded', function () {
     if (btn) {
         btn.addEventListener('click', runEvaluation);
     }
+
+    //création des élément de la grille
+    let grid = d3.select("#scanr-eur-grid").selectAll("div").data(EURS).enter().append('div')
+        .attr('class',"scanr-eur-col")
+        .attr('id',(d,i)=>"scanr-eur-col-"+d.id),
+    col = grid.append("div").attr('class',"scanr-eur-col-header")
+        .attr('id',(d,i)=>"scanr-eur-col-"+d.id);
+    col.append("span").attr('class',"scanr-eur-icon").html(d=>d.icon);
+    col.append("span").attr('class',"scanr-eur-col-title").html(d=>d.label);
+    grid.append("div").attr('class',"scanr-eur-col-body")
+            .attr('id',(d,i)=>"scanr-eur-body-"+d.id)
+            .append('p').attr('class',"scanr-eur-placeholder").html("Cliquez sur « Evaluer » pour lancer l'analyse.");
 });
 
 // ── Evaluation ────────────────────────────────────────────────────────────
@@ -62,43 +76,46 @@ function renderEvaluations(evaluations) {
         showError('Aucun résultat retourné par l\'agent.');
         return;
     }
+    console.log(evaluations);
 
-    EUR_IDS.forEach(function (eurId) {
-        const sorted = evaluations
-            .filter(function (e) { return e.scores && typeof e.scores[eurId] === 'number'; })
-            .sort(function (a, b) { return b.scores[eurId] - a.scores[eurId]; })
-            .slice(0, EUR_MAX);
+    let flatEvals = [];
+    evaluations.forEach(e=>{
+        e.axes.forEach(a=>{
+            flatEvals.push({'id':e.id,'axe':a,'eur':'arts','score':e.scores.arts});
+            flatEvals.push({'id':e.id,'axe':a,'eur':'care','score':e.scores.care});
+            flatEvals.push({'id':e.id,'axe':a,'eur':'democratie','score':e.scores.democratie});
+            flatEvals.push({'id':e.id,'axe':a,'eur':'transitions','score':e.scores.transitions});
+        })
+    })
+    console.log(flatEvals);
 
-        const body = document.getElementById('scanr-eur-body-' + eurId);
-        if (!body) return;
 
-        if (!sorted.length) {
-            body.innerHTML = '<p class="scanr-eur-placeholder">Aucun résultat.</p>';
-            return;
-        }
+    let grEurAxes = Array.from(d3.group(flatEvals, (d) => d.eur, (d) => d.axe)),
+        sumEurAxes = Array.from(d3.rollup(flatEvals, v => d3.sum(v, d => d.score), d => d.eur, d => d.axe));
 
-        // Score cumulé et moyenne
-        const cumul    = sorted.reduce(function (acc, ev) { return acc + ev.scores[eurId]; }, 0);
-        const avg      = Math.round(cumul / sorted.length);
-        const avgClass = avg >= 70 ? 'high' : avg >= 40 ? 'mid' : 'low';
 
-        // Résumé des justifications (une ligne par chercheur)
-        const justItems = sorted
-            .filter(function (ev) { return ev.justification; })
-            .map(function (ev) {
-                return '<li><strong>' + esc(ev.name || '') + '</strong> — ' + esc(ev.justification || '') + '</li>';
-            }).join('');
+    grEurAxes.forEach(eur=> {
+        let evals = flatEvals.filter(e=>e.eur==eur[0]);
+        eur.axes = Array.from(eur[1]);
+        eur.cumul = d3.sum(evals,d=>d.score);
+        eur.avg = Math.round(eur.cumul / evals.length);
+        eur.class = eur.avg >= 70 ? 'high' : eur.avg >= 40 ? 'mid' : 'low';
 
         const summaryHtml = '<div class="scanr-eur-axis-summary">'
             + '<div class="scanr-eur-axis-scores">'
-            +   '<span class="scanr-eur-cumul">Cumulé <strong>' + cumul + '</strong></span>'
-            +   '<span class="scanr-eur-score ' + avgClass + '">Moy. ' + avg + '/100</span>'
+            +   '<span class="scanr-eur-cumul">Cumulé <strong>' + eur.cumul + '</strong></span>'
+            +   '<span class="scanr-eur-score ' + eur.class + '">Moy. ' + eur.avg + '/100</span>'
             + '</div>'
             + '<div class="scanr-eur-score-bar">'
-            +   '<div class="scanr-eur-score-fill ' + avgClass + '" style="width:' + avg + '%"></div>'
+            +   '<div class="scanr-eur-score-fill ' + eur.class + '" style="width:' + eur.avg + '%"></div>'
             + '</div>'
-            + (justItems ? '<ul class="scanr-eur-just-list">' + justItems + '</ul>' : '')
             + '</div>';
+
+        d3.select('#scanr-eur-body-' + eur[0]).html(summaryHtml);
+        /*
+        .selectAll("div").data(eur.axes).enter().append("div")
+            .attr()
+
 
         const n = sorted.length;
         const cardsHtml = sorted.map(function (ev) { return renderResearcherCard(ev, eurId); }).join('');
@@ -109,6 +126,7 @@ function renderEvaluations(evaluations) {
             + '<summary>' + detailsLabel + '</summary>'
             + cardsHtml
             + '</details>';
+        */
     });
 
     toast('Evaluation terminée — ' + evaluations.length + ' chercheur' + (evaluations.length > 1 ? 's' : '') + ' analysé' + (evaluations.length > 1 ? 's' : ''), 'ok');
