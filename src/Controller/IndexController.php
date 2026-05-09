@@ -640,6 +640,8 @@ class IndexController extends AbstractActionController
 
     // ── EUR Convergences (agent IA) ───────────────────────────────────────
 
+    const IA_SERVICES = ['claude', 'chatgpt', 'gemini', 'ollama'];
+
     public function eurConvergenceAjaxAction()
     {
         $user = $this->auth->getIdentity();
@@ -655,11 +657,17 @@ class IndexController extends AbstractActionController
             return new JsonModel(['ok' => false, 'message' => 'Action inconnue : ' . $action]);
         }
 
-        $body    = json_decode($request->getContent(), true) ?? [];
-        $itemIds = array_map('intval', $body['item_ids'] ?? []);
+        $body      = json_decode($request->getContent(), true) ?? [];
+        $itemIds   = array_map('intval', $body['item_ids'] ?? []);
+        $iaService = $body['ia_service']
+            ?? ($this->settings ? $this->settings->get('scanr_ia_service', 'claude') : 'claude');
 
         if (empty($itemIds)) {
             return new JsonModel(['ok' => false, 'message' => 'Aucun chercheur fourni']);
+        }
+
+        if (!in_array($iaService, self::IA_SERVICES, true)) {
+            return new JsonModel(['ok' => false, 'message' => 'Service IA inconnu : ' . $iaService]);
         }
 
         // Limite à 50 chercheurs par appel pour rester dans les limites de tokens
@@ -674,7 +682,6 @@ class IndexController extends AbstractActionController
             try {
                 $item = $this->api->read('items', $itemId)->getContent();
 
-                // Mots-clefs (dcterms:subject, skos:hasTopConcept)
                 $keywords = [];
                 foreach ($conceptProps as $prop) {
                     foreach ($item->value($prop, ['all' => true, 'default' => []]) as $v) {
@@ -688,22 +695,20 @@ class IndexController extends AbstractActionController
                 }
                 $keywords = array_values(array_unique(array_filter($keywords)));
 
-                // Publications (foaf:publications)
                 $publications = [];
                 foreach ($item->value('foaf:publications', ['all' => true, 'default' => []]) as $v) {
                     $publications[] = $v->value();
                 }
 
-                // Co-auteurs (bibo:contributorList)
                 $coAuthors = [];
                 foreach ($item->value('bibo:contributorList', ['all' => true, 'default' => []]) as $v) {
                     $vr          = $v->valueResource();
                     $coAuthors[] = $vr ? $vr->displayTitle() : $v->value();
                 }
-                // Co-auteurs (bibo:contributorList)
+
                 $axes = [];
                 foreach ($item->value('dcterms:hasPart', ['all' => true, 'default' => []]) as $v) {
-                    $vr          = $v->valueResource();
+                    $vr     = $v->valueResource();
                     $axes[] = $vr ? $vr->displayTitle() : $v->value();
                 }
 
@@ -713,7 +718,7 @@ class IndexController extends AbstractActionController
                     'keywords'     => array_slice($keywords,     0, 20),
                     'publications' => array_slice($publications, 0, 10),
                     'co_authors'   => array_slice($coAuthors,    0, 10),
-                    'axes'   => array_slice($axes,    0, 10),
+                    'axes'         => array_slice($axes,         0, 10),
                 ];
             } catch (\Exception $e) {
                 // item introuvable ou inaccessible → ignoré
@@ -724,41 +729,70 @@ class IndexController extends AbstractActionController
             return new JsonModel(['ok' => false, 'message' => 'Aucun chercheur trouvé']);
         }
 
-        $apiKey = $this->settings ? $this->settings->get('scanr_claude_api_key', '') : '';
-        if (empty($apiKey)) {
-            return new JsonModel(['ok' => false, 'message' => 'Clé API Claude non configurée. Veuillez renseigner scanr_claude_api_key dans les paramètres du module.']);
-        }
+        [$apiKey, $model, $apiUrl] = $this->getIaServiceConfig($iaService);
 
-        $model = $this->settings ? $this->settings->get('scanr_claude_model', 'claude-haiku-4-5-20251001') : 'claude-haiku-4-5-20251001';
-        if (empty($model)) {
-            $model = 'claude-haiku-4-5-20251001';
+        if (empty($apiKey) && $iaService !== 'ollama') {
+            return new JsonModel(['ok' => false, 'message' => "Clé API {$iaService} non configurée dans les paramètres du module."]);
         }
 
         try {
-            $evaluations = $this->callClaudeApi($apiKey, $model, $researchers);
+            $evaluations = $this->callIaApi($iaService, $apiKey, $model, $apiUrl, $researchers);
             return new JsonModel(['ok' => true, 'evaluations' => $evaluations]);
         } catch (\Exception $e) {
-            return new JsonModel(['ok' => false, 'message' => 'Erreur API Claude : ' . $e->getMessage()]);
+            return new JsonModel(['ok' => false, 'message' => "Erreur API {$iaService} : " . $e->getMessage()]);
         }
     }
 
-    private function callClaudeApi(string $apiKey, string $model, array $researchers): array
+    private function getIaServiceConfig(string $service): array
+    {
+        switch ($service) {
+            case 'chatgpt':
+                $apiKey = $this->settings ? $this->settings->get('scanr_chatgpt_api_key', '') : '';
+                $model  = $this->settings ? $this->settings->get('scanr_chatgpt_model', 'gpt-4o-mini') : 'gpt-4o-mini';
+                $model  = $model ?: 'gpt-4o-mini';
+                $apiUrl = 'https://api.openai.com/v1/chat/completions';
+                break;
+            case 'gemini':
+                $apiKey = $this->settings ? $this->settings->get('scanr_gemini_api_key', '') : '';
+                $model  = $this->settings ? $this->settings->get('scanr_gemini_model', 'gemini-1.5-flash') : 'gemini-1.5-flash';
+                $model  = $model ?: 'gemini-1.5-flash';
+                $apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent';
+                break;
+            case 'ollama':
+                $apiKey  = '';
+                $model   = $this->settings ? $this->settings->get('scanr_ollama_model', 'llama3') : 'llama3';
+                $model   = $model ?: 'llama3';
+                $baseUrl = $this->settings ? $this->settings->get('scanr_ollama_url', 'http://localhost:11434') : 'http://localhost:11434';
+                $apiUrl  = rtrim($baseUrl, '/') . '/api/generate';
+                break;
+            case 'claude':
+            default:
+                $apiKey = $this->settings ? $this->settings->get('scanr_claude_api_key', '') : '';
+                $model  = $this->settings ? $this->settings->get('scanr_claude_model', 'claude-haiku-4-5-20251001') : 'claude-haiku-4-5-20251001';
+                $model  = $model ?: 'claude-haiku-4-5-20251001';
+                $apiUrl = 'https://api.anthropic.com/v1/messages';
+                break;
+        }
+        return [$apiKey, $model, $apiUrl];
+    }
+
+    private function callIaApi(string $service, string $apiKey, string $model, string $apiUrl, array $researchers): array
     {
         set_time_limit(320);
+
         $eurs = [
             'arts'        => 'Arts, créations, technologies & industries culturelles',
             'transitions' => 'Transitions numériques, écologiques & économiques',
             'care'        => 'Care – prendre soin : santé mentale, handicap, migrations',
             'democratie'  => 'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques',
         ];
-        $evaluations=[];
+
         $eursText = implode("\n", array_map(
             fn($k, $v) => "- {$k} : {$v}",
             array_keys($eurs),
             array_values($eurs)
         ));
 
-        // ── Template du prompt (schéma sans données chercheurs, stocké dans dctype:Service) ──
         $promptTemplate = "Tu es un expert en pilotage de la science et en évaluation de la recherche académique.\n\n"
             . "Voici les 4 Ecoles Universitaires de Recherche (EUR) :\n{$eursText}\n\n"
             . "Pour chaque chercheur fourni, évalue la convergence de ses recherches avec chacune des 4 EUR. "
@@ -768,94 +802,192 @@ class IndexController extends AbstractActionController
             . "Format de réponse (JSON strict, aucun texte autour) :\n"
             . '{"evaluations":[{"id":<id>,"name":"<nom>","scores":{"arts":<0-100>,"transitions":<0-100>,"care":<0-100>,"democratie":<0-100>},"justification":"<1-2 phrases>"}]}';
 
-        // ── Paramètres API (stockés dans dctype:Service) ──────────────────
         $apiParams = ['model' => $model, 'max_tokens' => 4096];
-        $apiUrl    = 'https://api.anthropic.com/v1/messages';
 
-        $agent = $this->findOrCreateAgent("expert EUR Convergences", $model, $apiUrl, $promptTemplate, $apiParams);
+        $agent = $this->findOrCreateAgent("expert EUR Convergences [{$service}]", $model, $apiUrl, $promptTemplate, $apiParams);
 
-        // ── Données chercheurs (partie variable du prompt) ────────────────
-        $researchersText = '';
+        $evaluations = [];
         foreach ($researchers as $r) {
-
-            $existe = $this->findExistEval($agent->id(),$r['id']);
-            if(!empty($existe)){
-                $eval = json_decode($existe[0]->value('curation:data')->value(), true);
-                $eval["axes"]=$r["axes"];
-                $evaluations[]=$eval;
+            $existe = $this->findExistEval($agent->id(), $r['id']);
+            if (!empty($existe)) {
+                $eval         = json_decode($existe[0]->value('curation:data')->value(), true);
+                $eval['axes'] = $r['axes'];
+                $evaluations[] = $eval;
                 continue;
             }
 
-            $researchersText = "\n---\n";
+            $researchersText  = "\n---\n";
             $researchersText .= "ID: {$r['id']}\n";
             $researchersText .= "Nom: {$r['name']}\n";
             if (!empty($r['keywords']))     $researchersText .= "Mots-clefs: "   . implode(', ', $r['keywords'])     . "\n";
             if (!empty($r['publications'])) $researchersText .= "Publications: " . implode(' | ', $r['publications']) . "\n";
             if (!empty($r['co_authors']))   $researchersText .= "Co-auteurs: "   . implode(', ', $r['co_authors'])   . "\n";
 
-            $prompt = $promptTemplate . "\n\nChercheurs à évaluer :" . $researchersText;
+            $prompt  = $promptTemplate . "\n\nChercheurs à évaluer :" . $researchersText;
+            $content = $this->callServiceHttp($service, $apiKey, $model, $apiUrl, $prompt, $apiParams);
 
-
-            $payload = json_encode(array_merge($apiParams, [
-                'messages' => [['role' => 'user', 'content' => $prompt]],
-            ]), JSON_UNESCAPED_UNICODE);
-
-            // ── Appel API Claude ──────────────────────────────────────────────
-            $ch = curl_init($apiUrl);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => $payload,
-                CURLOPT_HTTPHEADER     => [
-                    'Content-Type: application/json',
-                    'x-api-key: ' . $apiKey,
-                    'anthropic-version: 2023-06-01',
-                ],
-                CURLOPT_TIMEOUT => 90,
-            ]);
-
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlErr  = curl_error($ch);
-            curl_close($ch);
-
-            if ($curlErr) {
-                throw new \Exception('cURL : ' . $curlErr);
-            }
-            if ($httpCode !== 200) {
-                $err = json_decode($response, true);
-                $msg = $err['error']['message'] ?? $response;
-                throw new \Exception("HTTP {$httpCode} : {$msg}");
-            }
-
-            $decoded = json_decode($response, true);
-            $content = $decoded['content'][0]['text'] ?? '';
-
-            // Extrait le JSON même si Claude entoure d'un bloc Markdown
             if (preg_match('/```(?:json)?\s*([\s\S]+?)\s*```/', $content, $m)) {
                 $content = $m[1];
             }
 
             $result = json_decode($content, true);
             if (!isset($result['evaluations']) || !is_array($result['evaluations'])) {
-                throw new \Exception('Réponse Claude invalide : ' . substr($content, 0, 300));
+                throw new \Exception("Réponse {$service} invalide : " . substr($content, 0, 300));
             }
 
-            $eval = $result['evaluations'][0];
-            //ajoute les axes
-            $eval["axes"]=$r["axes"];
+            $eval         = $result['evaluations'][0];
+            $eval['axes'] = $r['axes'];
 
-            // ── Persistance Omeka (non bloquante) ─────────────────────────────
             try {
                 $this->createEurEvaluationItem($agent, $eval);
             } catch (\Exception $e) {
-                // Ne bloque pas la réponse si la persistance échoue
                 error_log('[Scanr] EUR persistance Omeka : ' . $e->getMessage());
             }
-            $evaluations[]=$eval;
+
+            $evaluations[] = $eval;
         }
 
         return $evaluations;
+    }
+
+    private function callServiceHttp(string $service, string $apiKey, string $model, string $apiUrl, string $prompt, array $apiParams): string
+    {
+        switch ($service) {
+            case 'chatgpt': return $this->callChatgptHttp($apiKey, $model, $apiUrl, $prompt);
+            case 'gemini':  return $this->callGeminiHttp($apiKey, $apiUrl, $prompt);
+            case 'ollama':  return $this->callOllamaHttp($model, $apiUrl, $prompt);
+            default:        return $this->callClaudeHttp($apiKey, $apiUrl, $prompt, $apiParams);
+        }
+    }
+
+    private function callClaudeHttp(string $apiKey, string $apiUrl, string $prompt, array $apiParams): string
+    {
+        $payload = json_encode(array_merge($apiParams, [
+            'messages' => [['role' => 'user', 'content' => $prompt]],
+        ]), JSON_UNESCAPED_UNICODE);
+
+        $ch = curl_init($apiUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'x-api-key: ' . $apiKey,
+                'anthropic-version: 2023-06-01',
+            ],
+            CURLOPT_TIMEOUT => 90,
+        ]);
+
+        [$response, $httpCode, $curlErr] = $this->curlExec($ch);
+
+        if ($curlErr) throw new \Exception('cURL : ' . $curlErr);
+        if ($httpCode !== 200) {
+            $err = json_decode($response, true);
+            throw new \Exception("HTTP {$httpCode} : " . ($err['error']['message'] ?? $response));
+        }
+
+        $decoded = json_decode($response, true);
+        return $decoded['content'][0]['text'] ?? '';
+    }
+
+    private function callChatgptHttp(string $apiKey, string $model, string $apiUrl, string $prompt): string
+    {
+        $payload = json_encode([
+            'model'       => $model,
+            'messages'    => [['role' => 'user', 'content' => $prompt]],
+            'max_tokens'  => 4096,
+            'temperature' => 0.3,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $ch = curl_init($apiUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $apiKey,
+            ],
+            CURLOPT_TIMEOUT => 90,
+        ]);
+
+        [$response, $httpCode, $curlErr] = $this->curlExec($ch);
+
+        if ($curlErr) throw new \Exception('cURL : ' . $curlErr);
+        if ($httpCode !== 200) {
+            $err = json_decode($response, true);
+            throw new \Exception("HTTP {$httpCode} : " . ($err['error']['message'] ?? $response));
+        }
+
+        $decoded = json_decode($response, true);
+        return $decoded['choices'][0]['message']['content'] ?? '';
+    }
+
+    private function callGeminiHttp(string $apiKey, string $apiUrl, string $prompt): string
+    {
+        $payload = json_encode([
+            'contents'         => [['parts' => [['text' => $prompt]]]],
+            'generationConfig' => ['temperature' => 0.3, 'maxOutputTokens' => 4096],
+        ], JSON_UNESCAPED_UNICODE);
+
+        $ch = curl_init($apiUrl . '?key=' . $apiKey);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_TIMEOUT        => 90,
+        ]);
+
+        [$response, $httpCode, $curlErr] = $this->curlExec($ch);
+
+        if ($curlErr) throw new \Exception('cURL : ' . $curlErr);
+        if ($httpCode !== 200) {
+            $err = json_decode($response, true);
+            throw new \Exception("HTTP {$httpCode} : " . ($err['error']['message'] ?? $response));
+        }
+
+        $decoded = json_decode($response, true);
+        return $decoded['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    }
+
+    private function callOllamaHttp(string $model, string $apiUrl, string $prompt): string
+    {
+        $payload = json_encode([
+            'model'  => $model,
+            'prompt' => $prompt,
+            'stream' => false,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $ch = curl_init($apiUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_TIMEOUT        => 120,
+        ]);
+
+        [$response, $httpCode, $curlErr] = $this->curlExec($ch);
+
+        if ($curlErr) throw new \Exception('cURL : ' . $curlErr);
+        if ($httpCode !== 200) {
+            $err = json_decode($response, true);
+            throw new \Exception("HTTP {$httpCode} : " . ($err['error'] ?? $response));
+        }
+
+        $decoded = json_decode($response, true);
+        return $decoded['response'] ?? '';
+    }
+
+    private function curlExec($ch): array
+    {
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        curl_close($ch);
+        return [$response, $httpCode, $curlErr];
     }
 
     /**
@@ -1039,54 +1171,5 @@ class IndexController extends AbstractActionController
         return $this->redirect()->toRoute('admin/scanr/search');
     }
 
-
-    /**
-     * Envoie le profil au LLM Gemini pour générer l'analyse stratégique.
-     */
-    private function generateEvaluationWithGemini(array $researcherData, string $eursText): string
-    {
-        $systemPrompt = "Tu es un expert en pilotage stratégique de la recherche et de l'innovation. " .
-            "Ta mission est d'évaluer le profil suivant (fourni en JSON-LD) pour son intégration dans les " .
-            "Écoles Universitaires de Recherche (EUR)\n"
-            . "Voici les 4 Ecoles Universitaires de Recherche (EUR) :\n{$eursText}\n\n"
-            . "Pour chaque chercheur fourni, évalue la convergence de ses recherches avec chacune des 4 EUR.\n"
-            . "Attribue un score de 0 (aucune convergence) à 100 (convergence totale) pour chaque EUR.\n".
-            "Analyse les mots-clefs (skos:hasTopConcept), les publications (foaf:publications) et le réseau (bibo:contributorList).\n".
-            "Argumente le score par : liste des forces, les points de vigilance et les recommandations d'intégration.\n"
-            . "Format de réponse (JSON strict, aucun texte autour) :\n"
-            . '{"evaluations":[{"id":<id>,"name":"<nom>","scores":{"arts":<0-100>,"transitions":<0-100>,"care":<0-100>,"democratie":<0-100>},"argumentation":{"forces":<1-2 phrases>, "vigilance":<1-2 phrases>,"recommandations":<1-2 phrases>"}]}';
-
-            
-        $payload = [
-            'contents' => [
-                [
-                    'parts' => [
-                        ['text' => $systemPrompt . "\n\nVoici le profil JSON :\n" . Json::encode($researcherData)]
-                    ]
-                ]
-            ],
-            // Paramètres optionnels pour contrôler la génération
-            'generationConfig' => [
-                'temperature' => 0.4, // Assez bas pour une évaluation analytique et factuelle
-            ]
-        ];
-
-        $client = new Client($this->geminiApiUrl . '?key=' . $this->geminiApiKey);
-        $client->setMethod(Request::METHOD_POST);
-        $client->setHeaders([
-            'Content-Type' => 'application/json',
-        ]);
-        $client->setRawBody(Json::encode($payload));
-
-        $response = $client->send();
-
-        if (!$response->isSuccess()) {
-            throw new Exception("Erreur de l'API Gemini : " . $response->getBody());
-        }
-
-        $result = Json::decode($response->getBody(), Json::TYPE_ARRAY);
-        
-        return $result['candidates'][0]['content']['parts'][0]['text'] ?? "Erreur : aucune évaluation générée.";
-    }
 
 }
