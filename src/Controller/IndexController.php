@@ -640,7 +640,7 @@ class IndexController extends AbstractActionController
 
     // ── EUR Convergences (agent IA) ───────────────────────────────────────
 
-    const IA_SERVICES = ['claude', 'chatgpt', 'gemini', 'ollama'];
+    const IA_SERVICES = ['albert','claude', 'chatgpt', 'gemini', 'ollama'];
 
     public function eurConvergenceAjaxAction()
     {
@@ -766,11 +766,17 @@ class IndexController extends AbstractActionController
                 $apiUrl  = rtrim($baseUrl, '/') . '/api/generate';
                 break;
             case 'claude':
-            default:
                 $apiKey = $this->settings ? $this->settings->get('scanr_claude_api_key', '') : '';
                 $model  = $this->settings ? $this->settings->get('scanr_claude_model', 'claude-haiku-4-5-20251001') : 'claude-haiku-4-5-20251001';
                 $model  = $model ?: 'claude-haiku-4-5-20251001';
                 $apiUrl = 'https://api.anthropic.com/v1/messages';
+                break;
+            case 'albert':
+            default:
+                $apiKey = $this->settings ? $this->settings->get('scanr_albert_api_key', '') : '';
+                $model  = $this->settings ? $this->settings->get('scanr_albert_model', 'openai/gpt-oss-120b') : 'openai/gpt-oss-120b';
+                $model  = $model ?: 'openai/gpt-oss-120b';
+                $apiUrl = 'https://albert.api.etalab.gouv.fr/v1/chat/completions';
                 break;
         }
         return [$apiKey, $model, $apiUrl];
@@ -856,7 +862,8 @@ class IndexController extends AbstractActionController
             case 'chatgpt': return $this->callChatgptHttp($apiKey, $model, $apiUrl, $prompt);
             case 'gemini':  return $this->callGeminiHttp($apiKey, $apiUrl, $prompt);
             case 'ollama':  return $this->callOllamaHttp($model, $apiUrl, $prompt);
-            default:        return $this->callClaudeHttp($apiKey, $apiUrl, $prompt, $apiParams);
+            case 'albert':  return $this->callAlbertHttp($apiKey, $model, $apiUrl, $prompt);
+            default:        return $this->callAlbertHttp($apiKey, $model, $apiUrl, $prompt);
         }
     }
 
@@ -923,6 +930,40 @@ class IndexController extends AbstractActionController
         $decoded = json_decode($response, true);
         return $decoded['choices'][0]['message']['content'] ?? '';
     }
+
+    private function callAlbertHttp(string $apiKey, string $model, string $apiUrl, string $prompt): string
+    {
+        $payload = json_encode([
+            'model'       => $model,
+            'messages'    => [['role' => 'user', 'content' => $prompt]],
+            'max_tokens'  => 4096,
+            'temperature' => 0.3,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $ch = curl_init($apiUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $apiKey,
+            ],
+            CURLOPT_TIMEOUT => 90,
+        ]);
+
+        [$response, $httpCode, $curlErr] = $this->curlExec($ch);
+
+        if ($curlErr) throw new \Exception('cURL : ' . $curlErr);
+        if ($httpCode !== 200) {
+            $err = json_decode($response, true);
+            throw new \Exception("HTTP {$httpCode} : " . ($err['error']['message'] ?? $response));
+        }
+
+        $decoded = json_decode($response, true);
+        return $decoded['choices'][0]['message']['content'] ?? '';
+    }
+
 
     private function callGeminiHttp(string $apiKey, string $apiUrl, string $prompt): string
     {
