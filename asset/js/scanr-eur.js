@@ -23,6 +23,9 @@ document.addEventListener('DOMContentLoaded', function () {
         btn.addEventListener('click', runEvaluation);
     }
 
+    // Rendu de la barre globale d'échelle Turbo
+    renderTurboScale();
+
     //création des élément de la grille
     let grid = d3.select("#scanr-eur-grid").selectAll("div").data(EURS).enter().append('div')
         .attr('class',"scanr-eur-col")
@@ -73,6 +76,30 @@ async function runEvaluation() {
 // ── Échelle colorimétrique Turbo ─────────────────────────────────────────
 function turboColor(score) {
     return d3.interpolateTurbo(Math.max(0, Math.min(1, score / 100)));
+}
+
+function renderTurboScale() {
+    const canvas = document.getElementById('scanr-eur-scale-canvas');
+    const ticks  = document.getElementById('scanr-eur-scale-ticks');
+    if (!canvas || !ticks) return;
+
+    const w = canvas.offsetWidth || canvas.parentElement.offsetWidth || 600;
+    canvas.width = w;
+    const ctx = canvas.getContext('2d');
+    for (let x = 0; x < w; x++) {
+        ctx.fillStyle = d3.interpolateTurbo(x / (w - 1));
+        ctx.fillRect(x, 0, 1, canvas.height);
+    }
+
+    // Ticks 0, 25, 50, 75, 100
+    [0, 25, 50, 75, 100].forEach(function (v) {
+        const span = document.createElement('span');
+        span.className = 'scanr-eur-scale-tick';
+        span.textContent = v;
+        span.style.left = v + '%';
+        span.style.color = turboColor(v);
+        ticks.appendChild(span);
+    });
 }
 
 // ── Rendu des résultats ───────────────────────────────────────────────────
