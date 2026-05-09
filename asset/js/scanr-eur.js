@@ -54,7 +54,7 @@ async function runEvaluation() {
         const res  = await fetch(EUR_AJAX_URL + '?action=evaluate', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ action: 'evaluate', item_ids: itemIds }),
+            body:    JSON.stringify({ action: 'evaluate', item_ids: itemIds, ia_service: (document.getElementById('scanr-eur-ia-select') || {}).value || 'claude' }),
         });
         const data = await res.json();
 

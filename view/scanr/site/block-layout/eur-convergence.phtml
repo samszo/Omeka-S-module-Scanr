@@ -27,6 +27,13 @@ $assetUrl = $this->plugin('assetUrl');
     <div class="scanr-eur-header">
         <h2 class="scanr-eur-title"><?php echo $escape($heading); ?></h2>
         <div class="scanr-eur-toolbar">
+            <label class="scanr-eur-ia-label" for="scanr-eur-ia-select">Service IA</label>
+            <select id="scanr-eur-ia-select" class="scanr-eur-ia-select">
+                <option value="claude">Claude (Anthropic)</option>
+                <option value="chatgpt">ChatGPT (OpenAI)</option>
+                <option value="gemini">Gemini (Google)</option>
+                <option value="ollama">Ollama (local)</option>
+            </select>
             <button id="scanr-eur-btn-evaluate" class="scanr-btn scanr-btn-primary">
                 Evaluer les convergences
             </button>
