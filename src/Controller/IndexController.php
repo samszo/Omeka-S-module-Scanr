@@ -741,6 +741,7 @@ class IndexController extends AbstractActionController
         } catch (\Exception $e) {
             return new JsonModel(['ok' => false, 'message' => "Erreur API {$iaService} : " . $e->getMessage()]);
         }
+        return [$apiKey, $model, $apiUrl];
     }
 
     private function getIaServiceConfig(string $service): array
