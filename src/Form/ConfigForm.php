@@ -38,6 +38,31 @@ class ConfigForm extends Form
                 ],
             ])
             ->add([
+                'name' => 'scanr_albert_api_key',
+                'type' => Element\Text::class,
+                'options' => [
+                    'label' => 'Clé API Albert (DINUM)',
+                    'info'  => 'Clé API pour l\'agent expert en pilotage de la science (évaluation des convergences EUR). Obtenir une clé sur https://albert.sites.beta.gouv.fr/access/',
+                ],
+                'attributes' => [
+                    'id'       => 'scanr_albert_api_key',
+                    'required' => false,
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_albert_model',
+                'type' => Element\Text::class,
+                'options' => [
+                    'label' => 'Modèle Albert',
+                    'info'  => 'Identifiant du modèle Albert à utiliser (modèle disponible : https://doc.incubateur.net/alliance/albert-api/modeles/available-models)',
+                ],
+                'attributes' => [
+                    'id'          => 'scanr_albert_model',
+                    'required'    => false,
+                    'placeholder' => 'openai/gpt-oss-120b',
+                ],
+            ])
+            ->add([
                 'name' => 'scanr_json_path',
                 'type' => Element\Text::class,
                 'options' => [
