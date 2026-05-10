@@ -715,6 +715,7 @@ class IndexController extends AbstractActionController
                 $researchers[] = [
                     'id'           => $itemId,
                     'name'         => $item->displayTitle(),
+                    'adminUrl'         => $item->adminUrl(null, true),
                     'keywords'     => array_slice($keywords,     0, 20),
                     'publications' => array_slice($publications, 0, 10),
                     'co_authors'   => array_slice($coAuthors,    0, 10),
@@ -820,6 +821,7 @@ class IndexController extends AbstractActionController
             if (!empty($existe)) {
                 $eval         = json_decode($existe[0]->value('curation:data')->value(), true);
                 $eval['axes'] = $r['axes'];
+                $eval['adminUrl'] = $r['adminUrl'];
                 $evaluations[] = $eval;
                 continue;
             }
@@ -856,6 +858,7 @@ class IndexController extends AbstractActionController
 
             $eval         = $result['evaluations'][0];
             $eval['axes'] = $r['axes'];
+            $eval['adminUrl'] = $r['adminUrl'];
 
             try {
                 $this->createEurEvaluationItem($agent, $eval);
