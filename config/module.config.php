@@ -77,6 +77,7 @@ return [
             'scanr_properties_hasConcept' => ["dcterms:subject"],
             'scanr_json_path' => dirname(__DIR__) . '/data/persons_denormalized.jsonl.gz',
             'scanr_json_import' => false,
+            'scanr_ia_service' => "albert",
             'scanr_claude_api_key' => '',
             'scanr_claude_model'   => 'claude-haiku-4-5-20251001',
             'scanr_albert_api_key' => '',

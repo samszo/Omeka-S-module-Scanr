@@ -77,9 +77,34 @@ async function runEvaluation() {
 function turboColor(score) {
     return d3.interpolateTurbo(Math.max(0, Math.min(1, score / 100)));
 }
+function turboColorCumul(score, cumul) {
+    return d3.interpolateTurbo(Math.max(0, Math.min(1, score / cumul)));
+}
 
-function renderTurboScale() {
-    const canvas = document.getElementById('scanr-eur-scale-canvas');
+function renderTurboScaleCumul(cumul) {
+
+    let canvas = document.getElementById('scanr-eur-scale-cumul'),
+        w = canvas.offsetWidth || canvas.parentElement.offsetWidth || 600,
+        color = d3.scaleSequential([0, cumul], d3.interpolateTurbo),  
+        leg = legend(d3.select("#scanr-eur-scale-cumul"), color, {
+                            title: "Echelle colorimétrique des cumuls",
+                            width:w,
+                            height:60
+                          })
+}
+
+function renderTurboScaleMoyen() {
+    let canvas = document.getElementById('scanr-eur-scale-moyen'),
+        w = canvas.offsetWidth || canvas.parentElement.offsetWidth || 600,
+        color = d3.scaleSequential([0, 100], d3.interpolateTurbo),  
+        leg = legend(d3.select("#scanr-eur-scale-cumul"), color, {
+                            title: "Echelle colorimétrique des moyennes",
+                            width:w,
+                            height:60
+                          })
+    /*
+
+
     const ticks  = document.getElementById('scanr-eur-scale-ticks');
     if (!canvas || !ticks) return;
 
@@ -100,6 +125,7 @@ function renderTurboScale() {
         span.style.color = turboColor(v);
         ticks.appendChild(span);
     });
+    */
 }
 
 // ── Rendu des résultats ───────────────────────────────────────────────────
@@ -118,7 +144,9 @@ function renderEvaluations(evaluations) {
             flatEvals.push({'id': e.id, 'axe': a, 'eur': 'transitions', 'score': e.scores.transitions});
         });
     });
-
+    let sumCumul = d3.sum(flatEvals, d => d.score);
+    renderTurboScaleMoyen();
+    renderTurboScaleCumul(sumCumul);
     let grEurAxes = Array.from(d3.group(flatEvals, d => d.eur, d => d.axe));
 
     grEurAxes.forEach(eur => {
@@ -134,36 +162,40 @@ function renderEvaluations(evaluations) {
         const headerEl = bodyEl && bodyEl.parentElement.querySelector('.scanr-eur-col-header');
         if (headerEl) headerEl.style.borderBottom = '4px solid ' + eurColor;
 
-        const summaryHtml = '<div class="scanr-eur-axis-summary">'
-            + '<div class="scanr-eur-axis-scores">'
+        const summaryHtml = '<div class="scanr-eur-axis-scores">'
             +   '<span class="scanr-eur-cumul">Cumulé <strong>' + eur.cumul + '</strong></span>'
             +   '<span class="scanr-eur-score" style="color:' + eurColor + '">Moy. ' + eur.avg + '/100</span>'
             + '</div>'
             + '<div class="scanr-eur-score-bar">'
             +   '<div class="scanr-eur-score-fill" style="width:' + eur.avg + '%;background:' + eurColor + '"></div>'
-            + '</div>'
             + '</div>';
 
         const body = d3.select('#scanr-eur-body-' + eur[0]);
         body.html(summaryHtml);
-
-        body.selectAll("details").data(eur.axes).enter().append("details")
-            .attr("class", "scanr-eur-details")
-            .append("summary").html(axe => {
+        const summaries = body.append("div").attr("class","scanr-eur-axis-summary").style("border-left",'4px solid ' + eurColor);
+        let axes = summaries.selectAll("summary").data(eur.axes).enter().append("summary").append('div')
+            .attr("class","scanr-eur-axis-summary").style("border-left",axe => {
                 axe.cumul = d3.sum(axe[1], d => d.score);
                 axe.avg   = Math.round(axe.cumul / axe[1].length);
-                const axeColor = turboColor(axe.avg);
-                return '<div class="scanr-eur-axis-summary">'
-                    + '<span><strong>' + esc(axe[0]) + '</strong> ' + axe[1].length + ' chercheur.euse(s)</span>'
+                axe.color = turboColor(axe.avg);
+                return '4px solid ' + axe.color;
+            })
+            .html(axe => {
+                return '<span><strong>' + esc(axe[0]) + '</strong> => </span>'
+                    +   '<span class="scanr-eur-cumul">Cumulé <strong>' + axe.cumul + '</strong> (' + axe[1].length + ' p.)</span>'
                     + '<div class="scanr-eur-axis-scores">'
-                    +   '<span class="scanr-eur-cumul">Cumulé <strong>' + axe.cumul + '</strong></span>'
-                    +   '<span class="scanr-eur-score" style="color:' + axeColor + '">Moy. ' + axe.avg + '/100</span>'
+                    +   '<span class="scanr-eur-score" style="color:' + axe.color + '">Moy. ' + axe.avg + '/100</span>'
                     + '</div>'
                     + '<div class="scanr-eur-score-bar">'
-                    +   '<div class="scanr-eur-score-fill" style="width:' + axe.avg + '%;background:' + axeColor + '"></div>'
-                    + '</div>'
+                    +   '<div class="scanr-eur-score-fill" style="width:' + axe.avg + '%;background:' + axe.color + '"></div>'
                     + '</div>';
             })
+        axes.append("details").attr("class","scanr-eur-axes").append("ul").selectAll("li").data(a=>a[1].sort((a, b) => b.score - a.score)).enter().append("li")
+            .attr("class", "scanr-eur-details").html(d=>{
+                const c = evaluations.filter(e=>e.id==d.id)[0];
+                return c.name+" "+c.justification;
+            })
+
     });
 
     toast('Evaluation terminée — ' + evaluations.length + ' chercheur' + (evaluations.length > 1 ? 's' : '') + ' analysé' + (evaluations.length > 1 ? 's' : ''), 'ok');

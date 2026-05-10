@@ -809,11 +809,12 @@ class IndexController extends AbstractActionController
             . "Format de réponse (JSON strict, aucun texte autour) :\n"
             . '{"evaluations":[{"id":<id>,"name":"<nom>","scores":{"arts":<0-100>,"transitions":<0-100>,"care":<0-100>,"democratie":<0-100>},"justification":"<1-2 phrases>"}]}';
 
-        $apiParams = ['model' => $model, 'max_tokens' => 4096];
+        $apiParams = ['model' => $model, 'max_tokens' => 4096, "temperature" => 0.3];
 
         $agent = $this->findOrCreateAgent("expert EUR Convergences [{$service}]", $model, $apiUrl, $promptTemplate, $apiParams);
 
         $evaluations = [];
+        $lastApiCallAt = null;
         foreach ($researchers as $r) {
             $existe = $this->findExistEval($agent->id(), $r['id']);
             if (!empty($existe)) {
@@ -831,6 +832,17 @@ class IndexController extends AbstractActionController
             if (!empty($r['co_authors']))   $researchersText .= "Co-auteurs: "   . implode(', ', $r['co_authors'])   . "\n";
 
             $prompt  = $promptTemplate . "\n\nChercheurs à évaluer :" . $researchersText;
+
+            // Limite à 10 appels/minute (soit 1 appel toutes les 6 secondes)
+            if ($service == "albert" && $lastApiCallAt !== null) {
+                $elapsed = microtime(true) - $lastApiCallAt;
+                $minInterval = 6.0;
+                if ($elapsed < $minInterval) {
+                    usleep((int) (($minInterval - $elapsed) * 1000000));
+                }
+            }
+            $lastApiCallAt = microtime(true);
+            
             $content = $this->callServiceHttp($service, $apiKey, $model, $apiUrl, $prompt, $apiParams);
 
             if (preg_match('/```(?:json)?\s*([\s\S]+?)\s*```/', $content, $m)) {
@@ -863,7 +875,7 @@ class IndexController extends AbstractActionController
             case 'chatgpt': return $this->callChatgptHttp($apiKey, $model, $apiUrl, $prompt);
             case 'gemini':  return $this->callGeminiHttp($apiKey, $apiUrl, $prompt);
             case 'ollama':  return $this->callOllamaHttp($model, $apiUrl, $prompt);
-            case 'albert':  return $this->callAlbertHttp($apiKey, $model, $apiUrl, $prompt);
+            case 'albert':  return $this->callAlbertHttp($apiKey, $model, $apiUrl, $prompt, $apiParams);
             default:        return $this->callAlbertHttp($apiKey, $model, $apiUrl, $prompt);
         }
     }
@@ -932,13 +944,13 @@ class IndexController extends AbstractActionController
         return $decoded['choices'][0]['message']['content'] ?? '';
     }
 
-    private function callAlbertHttp(string $apiKey, string $model, string $apiUrl, string $prompt): string
+    private function callAlbertHttp(string $apiKey, string $model, string $apiUrl, string $prompt, array $apiParams): string
     {
         $payload = json_encode([
             'model'       => $model,
             'messages'    => [['role' => 'user', 'content' => $prompt]],
-            'max_tokens'  => 4096,
-            'temperature' => 0.3,
+            'max_tokens'  => $apiParams["max_tokens"],
+            'temperature' => $apiParams["temperature"]
         ], JSON_UNESCAPED_UNICODE);
 
         $ch = curl_init($apiUrl);

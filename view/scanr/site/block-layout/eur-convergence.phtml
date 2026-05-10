@@ -29,6 +29,7 @@ $assetUrl = $this->plugin('assetUrl');
         <div class="scanr-eur-toolbar">
             <label class="scanr-eur-ia-label" for="scanr-eur-ia-select">Service IA</label>
             <select id="scanr-eur-ia-select" class="scanr-eur-ia-select">
+                <option value="albert">Albert (DINUM)</option>
                 <option value="claude">Claude (Anthropic)</option>
                 <option value="chatgpt">ChatGPT (OpenAI)</option>
                 <option value="gemini">Gemini (Google)</option>
@@ -54,8 +55,11 @@ $assetUrl = $this->plugin('assetUrl');
     <div id="scanr-eur-error" class="scanr-eur-error" style="display:none"></div>
 
     <div id="scanr-eur-scale" class="scanr-eur-scale">
-        <canvas id="scanr-eur-scale-canvas" class="scanr-eur-scale-canvas" height="20"></canvas>
-        <div id="scanr-eur-scale-ticks" class="scanr-eur-scale-ticks"></div>
+        <div id="scanr-eur-scale-moyen" ></div>
+    </div>
+
+    <div class="scanr-eur-scale">
+        <div id="scanr-eur-scale-cumul" ></div>
     </div>
 
     <div id="scanr-eur-grid" class="scanr-eur-grid">
@@ -67,6 +71,7 @@ $assetUrl = $this->plugin('assetUrl');
 
 <?php if ($allowed): ?>
 <?php $this->headScript()->appendFile($assetUrl('js/d3.min.js', 'Scanr'), 'text/javascript', ['defer' => 'defer']); ?>
+<?php $this->headScript()->appendFile($assetUrl('js/legend.js', 'Scanr'), 'text/javascript', ['defer' => 'defer']); ?>
 <script>
 const EUR_AJAX_URL  = <?php echo json_encode($ajaxUrl); ?>;
 const EUR_ITEMS     = <?php echo $itemsJson; ?>;
