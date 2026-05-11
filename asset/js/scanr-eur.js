@@ -217,9 +217,9 @@ function renderResearcherCard(ev, eurId) {
 function exportQuarto() {
     if (!lastEvaluations.length) return;
 
-    const now     = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const iaValue = (document.getElementById('scanr-eur-ia-select') || {}).value || 'ia';
+    const now      = new Date();
+    const dateStr  = now.toISOString().slice(0, 10);
+    const iaValue  = (document.getElementById('scanr-eur-ia-select') || {}).value || 'ia';
     const nbCherch = lastEvaluations.length;
 
     let qmd = `---
@@ -235,52 +235,53 @@ format:
 
 `;
 
-    qmd += `## Synthèse par EUR\n\n`;
-
-    EURS.forEach(eur => {
-        const evals = lastEvaluations
-            .map(e => ({ name: e.name, score: e.scores[eur.id], justification: e.justification, adminUrl: e.adminUrl, axes: e.axes }))
-            .sort((a, b) => b.score - a.score);
-
-        const cumul = evals.reduce((s, e) => s + e.score, 0);
-        const avg   = evals.length ? Math.round(cumul / evals.length) : 0;
-
-        qmd += `### ${eur.icon} ${eur.label}\n\n`;
-        qmd += `**Score cumulé :** ${cumul} — **Moyenne :** ${avg}/100\n\n`;
-
-        qmd += `| Chercheur | Score | Justification |\n`;
-        qmd += `|-----------|------:|---------------|\n`;
-        evals.forEach(e => {
-            const name = e.name ? e.name.replace(/\|/g, '\\|') : '—';
-            const just = e.justification ? e.justification.replace(/\n/g, ' ').replace(/\|/g, '\\|') : '—';
-            qmd += `| [${name}](${e.adminUrl || '#'}) | ${e.score} | ${just} |\n`;
+    // Même logique de données que renderEvaluations
+    let flatEvals = [];
+    lastEvaluations.forEach(e => {
+        e.axes.forEach(a => {
+            flatEvals.push({'id': e.id, 'axe': a, 'eur': 'arts',        'score': e.scores.arts});
+            flatEvals.push({'id': e.id, 'axe': a, 'eur': 'care',        'score': e.scores.care});
+            flatEvals.push({'id': e.id, 'axe': a, 'eur': 'democratie',  'score': e.scores.democratie});
+            flatEvals.push({'id': e.id, 'axe': a, 'eur': 'transitions', 'score': e.scores.transitions});
         });
-        qmd += '\n';
     });
 
-    qmd += `## Détail par chercheur\n\n`;
+    const grEurAxes = Array.from(d3.group(flatEvals, d => d.eur, d => d.axe));
 
-    lastEvaluations.slice().sort((a, b) => {
-        const sumA = EURS.reduce((s, eur) => s + (a.scores[eur.id] || 0), 0);
-        const sumB = EURS.reduce((s, eur) => s + (b.scores[eur.id] || 0), 0);
-        return sumB - sumA;
-    }).forEach(e => {
-        const name = e.name || '(inconnu)';
-        qmd += `### ${name}\n\n`;
-        if (e.adminUrl) qmd += `- **Fiche admin :** <${e.adminUrl}>\n`;
-        if (e.axes && e.axes.length) qmd += `- **Axes :** ${e.axes.join(', ')}\n`;
-        qmd += '\n';
-        qmd += `| EUR | Score |\n|-----|------:|\n`;
-        EURS.forEach(eur => {
-            qmd += `| ${eur.icon} ${eur.label} | ${e.scores[eur.id] || 0} |\n`;
+    grEurAxes.forEach(eur => {
+        const eurMeta  = EURS.find(u => u.id === eur[0]) || { icon: '', label: eur[0] };
+        const eurEvals = flatEvals.filter(e => e.eur === eur[0]);
+        const eurCumul = d3.sum(eurEvals, d => d.score);
+        const eurAvg   = Math.round(eurCumul / eurEvals.length);
+
+        qmd += `## ${eurMeta.icon} ${eurMeta.label}\n\n`;
+        qmd += `**Score cumulé :** ${eurCumul} — **Moyenne :** ${eurAvg}/100\n\n`;
+
+        const axes = Array.from(eur[1]);
+        axes.forEach(axe => {
+            const axeResearchers = axe[1].slice().sort((a, b) => b.score - a.score);
+            const axeCumul = d3.sum(axeResearchers, d => d.score);
+            const axeAvg   = Math.round(axeCumul / axeResearchers.length);
+
+            qmd += `### ${axe[0]}\n\n`;
+            qmd += `**Score cumulé :** ${axeCumul} (${axeResearchers.length} p.) — **Moyenne :** ${axeAvg}/100\n\n`;
+
+            qmd += `| Chercheur | Score | Justification |\n`;
+            qmd += `|-----------|------:|---------------|\n`;
+            axeResearchers.forEach(d => {
+                const c    = lastEvaluations.find(e => e.id === d.id);
+                const name = c && c.name ? c.name.replace(/\|/g, '\\|') : '—';
+                const just = c && c.justification ? c.justification.replace(/\n/g, ' ').replace(/\|/g, '\\|') : '—';
+                const url  = c && c.adminUrl ? c.adminUrl : '#';
+                qmd += `| [${name}](${url}) | ${d.score} | ${just} |\n`;
+            });
+            qmd += '\n';
         });
-        if (e.justification) qmd += `\n> ${e.justification.replace(/\n/g, '\n> ')}\n`;
-        qmd += '\n';
     });
 
-    const blob     = new Blob([qmd], { type: 'text/markdown;charset=utf-8' });
-    const url      = URL.createObjectURL(blob);
-    const anchor   = document.createElement('a');
+    const blob   = new Blob([qmd], { type: 'text/markdown;charset=utf-8' });
+    const url    = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
     anchor.href     = url;
     anchor.download = `eur-convergences-${dateStr}.qmd`;
     document.body.appendChild(anchor);
