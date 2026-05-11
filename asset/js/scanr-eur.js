@@ -162,10 +162,11 @@ function renderEvaluations(evaluations) {
                 d.color = colorMoyen(d.score);
                 d.name = c.name;
                 d.just = c.justification;
+                d.adminUrl = c.adminUrl;
                 return '4px solid ' + d.color;
             })
             .html(d => {
-                return '<span><strong>' + d.name + '</strong> => </span>'
+                return '<span><a target="_blank" href="' + d.adminUrl + '">&#128100;</a> <strong>' + d.name + '</strong> => </span>'
                     +   '<span class="scanr-eur-cumul" >Score <strong>' + d.score + '</strong></span>'
                     + '<div class="scanr-eur-score-bar">'
                     +   '<div class="scanr-eur-score-fill" style="width:' + d.score + '%;background:' + d.color + '"></div>'
