@@ -10,6 +10,7 @@ const EURS = [
     {'id':'democratie', 'label':'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques','icon':'🏛️'}
 ];
 let colorCumul, colorMoyen;
+let lastEvaluations = [];
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
@@ -21,6 +22,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const btn = document.getElementById('scanr-eur-btn-evaluate');
     if (btn) {
         btn.addEventListener('click', runEvaluation);
+    }
+
+    const btnExport = document.getElementById('scanr-eur-btn-export');
+    if (btnExport) {
+        btnExport.addEventListener('click', exportQuarto);
     }
 
     //création des élément de la grille
@@ -60,7 +66,10 @@ async function runEvaluation() {
             return;
         }
 
-        renderEvaluations(data.evaluations || []);
+        lastEvaluations = data.evaluations || [];
+        renderEvaluations(lastEvaluations);
+        const btnExport = document.getElementById('scanr-eur-btn-export');
+        if (btnExport) btnExport.disabled = !lastEvaluations.length;
 
     } catch (e) {
         showError('Erreur réseau : ' + e.message);
@@ -202,6 +211,86 @@ function renderResearcherCard(ev, eurId) {
             <div class="scanr-eur-score-fill ${scoreClass}" style="width:${score}%"></div>
         </div>
     </div>`;
+}
+
+// ── Export Quarto Markdown ────────────────────────────────────────────────
+function exportQuarto() {
+    if (!lastEvaluations.length) return;
+
+    const now     = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const iaValue = (document.getElementById('scanr-eur-ia-select') || {}).value || 'ia';
+    const nbCherch = lastEvaluations.length;
+
+    let qmd = `---
+title: "Convergences EUR – Analyse IA"
+subtitle: "Service IA : ${iaValue} — ${nbCherch} chercheur${nbCherch > 1 ? 's' : ''} analysé${nbCherch > 1 ? 's' : ''}"
+date: "${dateStr}"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    theme: cosmo
+---
+
+`;
+
+    qmd += `## Synthèse par EUR\n\n`;
+
+    EURS.forEach(eur => {
+        const evals = lastEvaluations
+            .map(e => ({ name: e.name, score: e.scores[eur.id], justification: e.justification, adminUrl: e.adminUrl, axes: e.axes }))
+            .sort((a, b) => b.score - a.score);
+
+        const cumul = evals.reduce((s, e) => s + e.score, 0);
+        const avg   = evals.length ? Math.round(cumul / evals.length) : 0;
+
+        qmd += `### ${eur.icon} ${eur.label}\n\n`;
+        qmd += `**Score cumulé :** ${cumul} — **Moyenne :** ${avg}/100\n\n`;
+
+        qmd += `| Chercheur | Score | Justification |\n`;
+        qmd += `|-----------|------:|---------------|\n`;
+        evals.forEach(e => {
+            const name = e.name ? e.name.replace(/\|/g, '\\|') : '—';
+            const just = e.justification ? e.justification.replace(/\n/g, ' ').replace(/\|/g, '\\|') : '—';
+            qmd += `| [${name}](${e.adminUrl || '#'}) | ${e.score} | ${just} |\n`;
+        });
+        qmd += '\n';
+    });
+
+    qmd += `## Détail par chercheur\n\n`;
+
+    lastEvaluations.slice().sort((a, b) => {
+        const sumA = EURS.reduce((s, eur) => s + (a.scores[eur.id] || 0), 0);
+        const sumB = EURS.reduce((s, eur) => s + (b.scores[eur.id] || 0), 0);
+        return sumB - sumA;
+    }).forEach(e => {
+        const name = e.name || '(inconnu)';
+        qmd += `### ${name}\n\n`;
+        if (e.adminUrl) qmd += `- **Fiche admin :** <${e.adminUrl}>\n`;
+        if (e.axes && e.axes.length) qmd += `- **Axes :** ${e.axes.join(', ')}\n`;
+        qmd += '\n';
+        qmd += `| EUR | Score |\n|-----|------:|\n`;
+        EURS.forEach(eur => {
+            qmd += `| ${eur.icon} ${eur.label} | ${e.scores[eur.id] || 0} |\n`;
+        });
+        if (e.justification) qmd += `\n> ${e.justification.replace(/\n/g, '\n> ')}\n`;
+        qmd += '\n';
+    });
+
+    const blob     = new Blob([qmd], { type: 'text/markdown;charset=utf-8' });
+    const url      = URL.createObjectURL(blob);
+    const anchor   = document.createElement('a');
+    anchor.href     = url;
+    anchor.download = `eur-convergences-${dateStr}.qmd`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(function () {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+    }, 100);
+
+    toast('Export Quarto téléchargé', 'ok');
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────
