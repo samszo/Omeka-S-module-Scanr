@@ -10,7 +10,7 @@ const EURS = [
     {'id':'democratie', 'label':'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques','icon':'🏛️'}
 ];
 let colorCumul, colorMoyen;
-let lastEvaluations = [];
+let lastEvaluations = [],lastResumes = [];
 
 // ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
@@ -19,9 +19,13 @@ document.addEventListener('DOMContentLoaded', function () {
         countEl.textContent = EUR_ITEMS.length + ' chercheur' + (EUR_ITEMS.length > 1 ? 's' : '') + ' chargé' + (EUR_ITEMS.length > 1 ? 's' : '');
     }
 
-    const btn = document.getElementById('scanr-eur-btn-evaluate');
-    if (btn) {
-        btn.addEventListener('click', runEvaluation);
+    const btnEval = document.getElementById('scanr-eur-btn-evaluate');
+    if (btnEval) {
+        btnEval.addEventListener('click', runEvaluation);
+    }
+    const btnResume = document.getElementById('scanr-eur-btn-resume');
+    if (btnResume) {
+        btnResume.addEventListener('click', runResume);
     }
 
     const btnExport = document.getElementById('scanr-eur-btn-export');
@@ -70,6 +74,44 @@ async function runEvaluation() {
         renderEvaluations(lastEvaluations);
         const btnExport = document.getElementById('scanr-eur-btn-export');
         if (btnExport) btnExport.disabled = !lastEvaluations.length;
+        const btnResume = document.getElementById('scanr-eur-btn-resume');
+        if (btnResume) btnResume.disabled = !lastEvaluations.length;
+
+    } catch (e) {
+        showError('Erreur réseau : ' + e.message);
+    } finally {
+        setLoading(false);
+        btn.disabled = false;
+    }
+}
+
+// ── Resume ────────────────────────────────────────────────────────────
+async function runResume() {
+    const btn = document.getElementById('scanr-eur-btn-resume');
+    btn.disabled = true;
+
+    setLoading(true);
+    clearError();
+    
+    const itemIds = EUR_ITEMS.map(function (i) { return i.id; });
+
+    try {
+        const res  = await fetch(EUR_AJAX_URL + '?action=resume', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ action: 'resume', item_ids: itemIds, ia_service: (document.getElementById('scanr-eur-ia-select') || {}).value || 'claude' }),
+        });
+        const data = await res.json();
+
+        if (!data.ok) {
+            showError(data.message || 'Erreur inconnue');
+            return;
+        }
+
+        lastResumes = data.resumes || [];
+        renderResumes(lastResumes);
+        const btnExport = document.getElementById('scanr-eur-btn-export');
+        if (btnExport) btnExport.disabled = !lastResumes.length;
 
     } catch (e) {
         showError('Erreur réseau : ' + e.message);
@@ -104,6 +146,29 @@ function renderTurboScaleMoyen() {
 }
 
 // ── Rendu des résultats ───────────────────────────────────────────────────
+function renderResumes(resumes) {
+    if (!resumes.length) {
+        showError('Aucun résultat retourné par l\'agent.');
+        return;
+    }
+
+    resumes.forEach(r=>{
+        let synthese = d3.select("#scanr-eur-axe-"+r.EUR+"_"+r.AXE);
+        synthese.select("span").remove();
+        synthese.append("div").style('color',colorMoyen(r.score)).html(r.score + ' / 100');
+        synthese.append("div").html('<b>Synthese</b> : ' + r.synthese);
+        synthese.append("div").html('<b>Forces</b> : ' + r.forces);
+        synthese.append("div").html('<b>Recommandations</b>: ' + r.recommandations);
+        synthese.append("div").html('<b>Vigilances</b>: ' + r.vigilances);
+        
+        
+    })
+
+    toast('Résumés terminés — ' + resumes.length + ' analyse' + (resumes.length > 1 ? 's' : ''), 'ok');
+}
+
+
+
 function renderEvaluations(evaluations) {
     if (!evaluations.length) {
         showError('Aucun résultat retourné par l\'agent.');
@@ -162,7 +227,8 @@ function renderEvaluations(evaluations) {
                     + '</div>'
                     + '<div class="scanr-eur-score-bar">'
                     +   '<div class="scanr-eur-score-fill" style="width:' + axe.avg + '%;background:' + axe.color + '"></div>'
-                    + '</div>';
+                    + '</div>'
+                    + '<div id="scanr-eur-axe-' + axe[1][0].eur+'_'+axe[1][0].axe + '"><span class="scanr-eur-cumul">Click "Résumer les convergences"</span></div>';
             }),
         details = axes.append("details").attr("class","scanr-eur-axes");
         details.selectAll("div").data(a=>a[1].sort((a, b) => b.score - a.score)).enter().append('div')
@@ -216,6 +282,7 @@ function renderResearcherCard(ev, eurId) {
 // ── Export Quarto Markdown ────────────────────────────────────────────────
 function exportQuarto() {
     if (!lastEvaluations.length) return;
+    if (!lastResumes.length) return;
 
     const now      = new Date();
     const dateStr  = now.toISOString().slice(0, 10);
@@ -229,7 +296,7 @@ date: "${dateStr}"
 format:
   html:
     toc: true
-    toc-depth: 3
+    toc-depth: 6
     theme: cosmo
 ---
 
@@ -266,6 +333,13 @@ format:
             qmd += `### ${axe[0]}\n\n`;
             qmd += `**Score cumulé :** ${axeCumul} (${axeResearchers.length} p.) — **Moyenne :** ${axeAvg}/100\n\n`;
 
+            let s = lastResumes.filter(r=>r.EUR==eur[0] && r.AXE==axe[0])[0];
+            qmd += `#### Synthèse\n\n`;
+            qmd += `**Score de la synthèse :** ${s.score} /100\n\n${s.synthese}\n\n`;
+            qmd += `##### Forces\n\n${s.forces}\n\n`;
+            qmd += `##### Recommandations\n\n${s.recommandations}\n\n`;
+            qmd += `##### Vigilances\n\n${s.vigilances}\n\n`;
+            /*
             qmd += `| Chercheur | Score | Justification |\n`;
             qmd += `|-----------|------:|---------------|\n`;
             axeResearchers.forEach(d => {
@@ -276,6 +350,7 @@ format:
                 qmd += `| [${name}](${url}) | ${d.score} | ${just} |\n`;
             });
             qmd += '\n';
+            */
         });
     });
 

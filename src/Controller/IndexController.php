@@ -5,6 +5,7 @@ use Laminas\Mvc\Controller\AbstractActionController;
 use Laminas\View\Model\JsonModel;
 use Laminas\View\Model\ViewModel;
 use Laminas\Authentication\AuthenticationService;
+use LengthException;
 use Scanr\Service\ApiClient;
 use Scanr\Service\DuckClient;
 use Scanr\Service\JsonlClient;
@@ -68,6 +69,13 @@ class IndexController extends AbstractActionController
      * @var AuthenticationService
      */
     protected $auth;
+
+    /**
+     * pour gérer la fréquence des appels aux API dans un délais raisonnable
+     */
+    protected $lastApiCallAt;
+
+    
 
 
     public function __construct(AuthenticationService $auth, ApiClient $apiClient, JsonlClient $jsonlClient, DuckClient $duckClient, SqlClient $sqlClient, SearchForm $searchForm, $api, $dispatcher, $settings = null, $userSettings = null)
@@ -642,6 +650,7 @@ class IndexController extends AbstractActionController
 
     const IA_SERVICES = ['albert','claude', 'chatgpt', 'gemini', 'ollama'];
 
+
     public function eurConvergenceAjaxAction()
     {
         $user = $this->auth->getIdentity();
@@ -653,22 +662,128 @@ class IndexController extends AbstractActionController
         $action  = $this->params()->fromQuery('action')
                 ?: $this->params()->fromPost('action', '');
 
-        if ($action !== 'evaluate') {
+        if ($action !== 'evaluate' && $action !== 'resume') {
             return new JsonModel(['ok' => false, 'message' => 'Action inconnue : ' . $action]);
         }
 
         $body      = json_decode($request->getContent(), true) ?? [];
-        $itemIds   = array_map('intval', $body['item_ids'] ?? []);
         $iaService = $body['ia_service']
             ?? ($this->settings ? $this->settings->get('scanr_ia_service', 'claude') : 'claude');
+        if (!in_array($iaService, self::IA_SERVICES, true)) {
+            return new JsonModel(['ok' => false, 'message' => 'Service IA inconnu : ' . $iaService]);
+        }
 
+        $itemIds   = array_map('intval', $body['item_ids'] ?? []);
         if (empty($itemIds)) {
             return new JsonModel(['ok' => false, 'message' => 'Aucun chercheur fourni']);
         }
 
-        if (!in_array($iaService, self::IA_SERVICES, true)) {
-            return new JsonModel(['ok' => false, 'message' => 'Service IA inconnu : ' . $iaService]);
+        switch ($action) {
+            case 'evaluate':
+                return $this->eurConvergenceEvaluate($itemIds, $iaService);
+                break;
+            case 'resume':
+                return $this->eurConvergenceResume($itemIds, $iaService);
+                break;
         }
+
+    }
+
+    private function eurConvergenceResume(array $itemIds, string $iaService)
+    {
+        //récupère les informations de l'agent
+        [$apiKey, $model, $apiUrl] = $this->getIaServiceConfig($iaService);
+        //récupère toutes les évaluations faite par l'agent
+        $agent = $this->findAgent("expert EUR Convergences [{$iaService}]",$model)[0];
+        //récupère les évaluations
+        $evals = [];
+        foreach ($itemIds as $itemId) {
+            $eval = $this->findExistEval($agent->id(),[$itemId]);
+            $person = $this->api->read('items', $itemId)->getContent();
+            if (!empty($eval)) {
+                $eval = $eval[0];
+                $data = json_decode($eval->value("curation:data")->value(),true);
+                $desc = $eval->value("dcterms:description")->value();
+                $ranks = [];
+                foreach ($eval->value("dcterms:subject", ['all' => true, 'default' => []]) as $v) {
+                    $anno = $v->valueAnnotation();
+                    $r = $anno ? $v->valueAnnotation()->value("curation:rank")->__toString() : 0;
+                    $d = $anno ? $v->valueAnnotation()->value("dcterms:description")->__toString() : "";
+                    if($d) $ranks[]=["key"=>$d,"val"=>$r,"id"=>$eval->id()];
+                }
+                //regroupe par eur
+                //pas nécessaire car les mêmes justifications pour chaque personne ?
+                foreach ($ranks as $r) {
+                    if(!isset($evals[$r["key"]]))$evals[$r["key"]]=["eur"=>$r["key"],"rank"=>0,"axes"=>[]];
+                    $evals[$r["key"]]["rank"]+=$r["val"];
+                    //regroupe par axe
+                    foreach ($person->value("dcterms:hasPart", ['all' => true, 'default' => []]) as $v) {
+                        $vr = $v->valueResource();
+                        $a = $vr ? $vr->displayTitle() : $v->value();
+                        $id = $vr ? $vr->id() : 0;
+                        if(!isset($evals[$r["key"]]["axes"][$a]))$evals[$r["key"]]["axes"][$a]=["name"=>$a,"id"=>$id,"rank"=>0,"evals"=>[],"ids"=>[]];
+                        $evals[$r["key"]]["axes"][$a]["rank"]+=$r["val"];
+                        $evals[$r["key"]]["axes"][$a]["evals"][]=$desc;
+                        $evals[$r["key"]]["axes"][$a]["ids"][]=$r["id"];
+                    }
+                }
+            }
+
+        }
+
+        $promptTemplate = "Tu es un expert en pilotage stratégique de la science et en évaluation de la recherche académique.\n\n"
+            . "Tes missions sont de  :\n"
+            . "1. Résumer dans une seule synthèse les justications des convergences entre  :\n"
+            . "   a. l'axe de recherche (AXE) : --axe-- \n"
+            . "   b. l'Ecole Universitaire de Recherche (EUR) : --descEur--  \n"
+            . "2. Evaluer à partir des justification :\n"
+            . "   a. les forces,\n"
+            . "   b. les points de vigilance\n"
+            . "   c. les recommandations d'intégration.\n"
+            . "3. Attribuer un score de convergence entre AXE et EUR : 0 (aucune convergence) à 100 (convergence totale).\n"
+            . "Voici les justifications :\n--justifications--\n\n"
+            . "Format de réponse (JSON strict, aucun texte autour) :\n"
+            . '{"score":<0-100>,"synthese":"<1-2 phrases>","forces":"<1-2 phrases>","vigilances":"<1-2 phrases>","recommandations":"<1-2 phrases>"}';
+
+        $apiParams = ['model' => $model, 'max_tokens' => 4096, "temperature" => 0.3];
+
+        $agent = $this->findOrCreateAgent("Expert EUR Convergences Synthèse [{$iaService}]", $model, $apiUrl, $promptTemplate, $apiParams);
+
+        $resumes = [];
+        $this->lastApiCallAt = null;
+        foreach ($evals as $eval) {
+            $existe = $this->findContext("Contexte EUR : ".$eval["eur"]);
+            if (empty($existe)) continue;
+            $eur = $existe[0];
+            foreach ($eval["axes"] as $axe) {
+                $sources = $axe["ids"];
+                $sources[]= $axe["id"];
+                $sources[]=$eur->id();
+                $existe = $this->findExistEval($agent->id(), $sources);
+                if (!empty($existe)) {
+                    $res = json_decode($existe[0]->value('curation:data')->value(), true);
+                    $resumes[] = $res;
+                    continue;
+                }
+                $prompt  = str_replace("--descEur--",$eur->value("dcterms:description")->value(),$promptTemplate);
+                $prompt  = str_replace("--justifications--",implode(', ', $axe['evals']),$prompt);
+                $prompt  = str_replace("--axe--",$axe['name'],$prompt);
+                
+
+                try {
+                    $res = $this->callIaApi($iaService, $apiKey, $model, $apiUrl, $apiParams, $agent, $prompt, ["sources"=>$sources,"EUR"=>$eval["eur"],"AXE"=>$axe['name']]);
+                    $resumes[] = $res;
+                } catch (\Exception $e) {
+                    return new JsonModel(['ok' => false, 'message' => "Erreur API {$iaService} : " . $e->getMessage()]);
+                }
+
+            }
+        }
+        return new JsonModel(['ok' => true, 'resumes' => $resumes]);
+    }
+
+    private function eurConvergenceEvaluate(array $itemIds, string $iaService)
+    {
 
         // Limite à 50 chercheurs par appel pour rester dans les limites de tokens
         $itemIds = array_slice($itemIds, 0, 50);
@@ -736,13 +851,72 @@ class IndexController extends AbstractActionController
             return new JsonModel(['ok' => false, 'message' => "Clé API {$iaService} non configurée dans les paramètres du module."]);
         }
 
-        try {
-            $evaluations = $this->callIaApi($iaService, $apiKey, $model, $apiUrl, $researchers);
-            return new JsonModel(['ok' => true, 'evaluations' => $evaluations]);
-        } catch (\Exception $e) {
-            return new JsonModel(['ok' => false, 'message' => "Erreur API {$iaService} : " . $e->getMessage()]);
+        $eurs = [
+            'arts'        => 'Arts, créations, technologies & industries culturelles',
+            'transitions' => 'Transitions numériques, écologiques & économiques',
+            'care'        => 'Care – prendre soin : santé mentale, handicap, migrations',
+            'democratie'  => 'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques',
+        ];
+        //enregistre le contexte de l'EUR
+        foreach ($eurs as $k => $d) {
+            $this->findOrCreateContext("Contexte EUR : ".$k,$d);
         }
-        return [$apiKey, $model, $apiUrl];
+
+
+        $eursText = implode("\n", array_map(
+            fn($k, $v) => "- {$k} : {$v}",
+            array_keys($eurs),
+            array_values($eurs)
+        ));
+
+        $promptTemplate = "Tu es un expert en pilotage de la science et en évaluation de la recherche académique.\n\n"
+            . "Voici les 4 Ecoles Universitaires de Recherche (EUR) :\n{$eursText}\n\n"
+            . "Pour chaque chercheur fourni, évalue la convergence de ses recherches avec chacune des 4 EUR. "
+            . "Attribue un score de 0 (aucune convergence) à 100 (convergence totale) pour chaque EUR. "
+            . "Base-toi sur les mots-clefs (skos:hasTopConcept, dcterms:subject), "
+            . "les titres de publications (foaf:publications) et les co-auteurs (bibo:contributorList).\n\n"
+            . "Format de réponse (JSON strict, aucun texte autour) :\n"
+            . '{"evaluations":[{"id":<id>,"name":"<nom>","scores":{"arts":<0-100>,"transitions":<0-100>,"care":<0-100>,"democratie":<0-100>},"justification":"<1-2 phrases>"}]}';
+
+        $apiParams = ['model' => $model, 'max_tokens' => 4096, "temperature" => 0.3];
+
+        $agent = $this->findOrCreateAgent("expert EUR Convergences [{$iaService}]", $model, $apiUrl, $promptTemplate, $apiParams);
+
+        $evaluations = [];
+        $this->lastApiCallAt = null;
+        foreach ($researchers as $r) {
+            if (empty($r['keywords']) && empty($r['publications']) && empty($r['co_authors'])) continue;
+            
+            $existe = $this->findExistEval($agent->id(), [$r['id']]);
+            if (!empty($existe)) {
+                $eval         = json_decode($existe[0]->value('curation:data')->value(), true);
+                //pour vérifier les modifications d'axe sans relancer l'api à l'IA
+                if($eval['axes'] != $r['axes']){
+                    $stop = true;
+                }
+                $eval['axes'] = $r['axes'];
+                $eval['adminUrl'] = $r['adminUrl'];
+                $evaluations[] = $eval;
+                continue;
+            }
+
+            $researchersText  = "\n---\n";
+            $researchersText .= "ID: {$r['id']}\n";
+            $researchersText .= "Nom: {$r['name']}\n";
+            if (!empty($r['keywords']))     $researchersText .= "Mots-clefs: "   . implode(', ', $r['keywords'])     . "\n";
+            if (!empty($r['publications'])) $researchersText .= "Publications: " . implode(' | ', $r['publications']) . "\n";
+            if (!empty($r['co_authors']))   $researchersText .= "Co-auteurs: "   . implode(', ', $r['co_authors'])   . "\n";
+
+            $prompt  = $promptTemplate . "\n\nChercheurs à évaluer :" . $researchersText;
+
+            try {
+                $eval = $this->callIaApi($iaService, $apiKey, $model, $apiUrl, $apiParams, $agent, $prompt);
+                $evaluations[] = $eval;
+            } catch (\Exception $e) {
+                return new JsonModel(['ok' => false, 'message' => "Erreur API {$iaService} : " . $e->getMessage()]);
+            }
+        }
+        return new JsonModel(['ok' => true, 'evaluations' => $evaluations]);
     }
 
     private function getIaServiceConfig(string $service): array
@@ -784,102 +958,59 @@ class IndexController extends AbstractActionController
         return [$apiKey, $model, $apiUrl];
     }
 
-    private function callIaApi(string $service, string $apiKey, string $model, string $apiUrl, array $researchers): array
+    private function callIaApi(string $service, string $apiKey, string $model, string $apiUrl, array $apiParams, object $agent, string $prompt, array $refs = []): array
     {
         set_time_limit(320);
 
-        $eurs = [
-            'arts'        => 'Arts, créations, technologies & industries culturelles',
-            'transitions' => 'Transitions numériques, écologiques & économiques',
-            'care'        => 'Care – prendre soin : santé mentale, handicap, migrations',
-            'democratie'  => 'Enjeux démocratiques contemporains, politiques publiques, risques géopolitiques',
-        ];
-
-        $eursText = implode("\n", array_map(
-            fn($k, $v) => "- {$k} : {$v}",
-            array_keys($eurs),
-            array_values($eurs)
-        ));
-
-        $promptTemplate = "Tu es un expert en pilotage de la science et en évaluation de la recherche académique.\n\n"
-            . "Voici les 4 Ecoles Universitaires de Recherche (EUR) :\n{$eursText}\n\n"
-            . "Pour chaque chercheur fourni, évalue la convergence de ses recherches avec chacune des 4 EUR. "
-            . "Attribue un score de 0 (aucune convergence) à 100 (convergence totale) pour chaque EUR. "
-            . "Base-toi sur les mots-clefs (skos:hasTopConcept, dcterms:subject), "
-            . "les titres de publications (foaf:publications) et les co-auteurs (bibo:contributorList).\n\n"
-            . "Format de réponse (JSON strict, aucun texte autour) :\n"
-            . '{"evaluations":[{"id":<id>,"name":"<nom>","scores":{"arts":<0-100>,"transitions":<0-100>,"care":<0-100>,"democratie":<0-100>},"justification":"<1-2 phrases>"}]}';
-
-        $apiParams = ['model' => $model, 'max_tokens' => 4096, "temperature" => 0.3];
-
-        $agent = $this->findOrCreateAgent("expert EUR Convergences [{$service}]", $model, $apiUrl, $promptTemplate, $apiParams);
-
-        $evaluations = [];
-        $lastApiCallAt = null;
-        foreach ($researchers as $r) {
-            $existe = $this->findExistEval($agent->id(), $r['id']);
-            if (!empty($existe)) {
-                $eval         = json_decode($existe[0]->value('curation:data')->value(), true);
-                $eval['axes'] = $r['axes'];
-                $eval['adminUrl'] = $r['adminUrl'];
-                $evaluations[] = $eval;
-                continue;
+        // Limite à 10 appels/minute (soit 1 appel toutes les 6 secondes)
+        if ($service == "albert" && $this->lastApiCallAt !== null) {
+            $elapsed = microtime(true) - $this->lastApiCallAt;
+            $minInterval = 6.0;
+            if ($elapsed < $minInterval) {
+                usleep((int) (($minInterval - $elapsed) * 1000000));
             }
+        }
+        $this->lastApiCallAt = microtime(true);
+        
+        $content = $this->callServiceHttp($service, $apiKey, $model, $apiUrl, $prompt, $apiParams);
 
-            $researchersText  = "\n---\n";
-            $researchersText .= "ID: {$r['id']}\n";
-            $researchersText .= "Nom: {$r['name']}\n";
-            if (!empty($r['keywords']))     $researchersText .= "Mots-clefs: "   . implode(', ', $r['keywords'])     . "\n";
-            if (!empty($r['publications'])) $researchersText .= "Publications: " . implode(' | ', $r['publications']) . "\n";
-            if (!empty($r['co_authors']))   $researchersText .= "Co-auteurs: "   . implode(', ', $r['co_authors'])   . "\n";
-
-            $prompt  = $promptTemplate . "\n\nChercheurs à évaluer :" . $researchersText;
-
-            // Limite à 10 appels/minute (soit 1 appel toutes les 6 secondes)
-            if ($service == "albert" && $lastApiCallAt !== null) {
-                $elapsed = microtime(true) - $lastApiCallAt;
-                $minInterval = 6.0;
-                if ($elapsed < $minInterval) {
-                    usleep((int) (($minInterval - $elapsed) * 1000000));
-                }
-            }
-            $lastApiCallAt = microtime(true);
-            
-            $content = $this->callServiceHttp($service, $apiKey, $model, $apiUrl, $prompt, $apiParams);
-
-            if (preg_match('/```(?:json)?\s*([\s\S]+?)\s*```/', $content, $m)) {
-                $content = $m[1];
-            }
-
-            $result = json_decode($content, true);
-            if (!isset($result['evaluations']) || !is_array($result['evaluations'])) {
-                throw new \Exception("Réponse {$service} invalide : " . substr($content, 0, 300));
-            }
-
-            $eval         = $result['evaluations'][0];
-            $eval['axes'] = $r['axes'];
-            $eval['adminUrl'] = $r['adminUrl'];
-
-            try {
-                $this->createEurEvaluationItem($agent, $eval);
-            } catch (\Exception $e) {
-                error_log('[Scanr] EUR persistance Omeka : ' . $e->getMessage());
-            }
-
-            $evaluations[] = $eval;
+        if (preg_match('/```(?:json)?\s*([\s\S]+?)\s*```/', $content, $m)) {
+            $content = $m[1];
         }
 
-        return $evaluations;
+        $result = json_decode($content, true);
+
+        try {
+            $agentTitle = $agent->displayTitle();
+            if (str_starts_with($agentTitle, 'Agent Expert EUR Convergences Synthèse')) {
+                $this->createEurSyntheseItem($agent,$result,$refs);
+                $eval = $result;
+            }else{
+                if (!isset($result['evaluations']) || !is_array($result['evaluations'])) {
+                    throw new \Exception("Réponse {$service} invalide : " . substr($content, 0, 300));
+                }
+                $eval = $result['evaluations'][0];
+                $eval['axes'] = $r['axes'];
+                $eval['adminUrl'] = $r['adminUrl'];
+                $this->createEurEvaluationItem($agent, $eval);                
+            }
+            
+        } catch (\Exception $e) {
+            error_log('[Scanr] EUR persistance Omeka : ' . $e->getMessage());
+        }
+
+        return $eval;
     }
 
     private function callServiceHttp(string $service, string $apiKey, string $model, string $apiUrl, string $prompt, array $apiParams): string
     {
         switch ($service) {
+            case 'claude': return $this->callClaudeHttp($apiKey, $apiUrl, $prompt, $apiParams);
             case 'chatgpt': return $this->callChatgptHttp($apiKey, $model, $apiUrl, $prompt);
             case 'gemini':  return $this->callGeminiHttp($apiKey, $apiUrl, $prompt);
             case 'ollama':  return $this->callOllamaHttp($model, $apiUrl, $prompt);
             case 'albert':  return $this->callAlbertHttp($apiKey, $model, $apiUrl, $prompt, $apiParams);
-            default:        return $this->callAlbertHttp($apiKey, $model, $apiUrl, $prompt);
+            default:        return $this->callAlbertHttp($apiKey, $model, $apiUrl, $prompt, $apiParams);
         }
     }
 
@@ -1053,43 +1184,39 @@ class IndexController extends AbstractActionController
      */
     private function findExistEval(
         string $idAgent,
-        string $idSource
+        array $sources
+
     ) {
         // Recherche un agen existant identifié par le modèle utilisé
         $rcValo = $this->apiClient->getRc('valo:Expertises_all');
         $pSrc     = $this->apiClient->getProperty('dcterms:source')->id();
         $pCrea     = $this->apiClient->getProperty('dcterms:creator')->id();
-
-        $existing = $this->api->search('items', [
-            'resource_class_id' => [$rcValo->id()],
-            'property'          => [[
-                'joiner'   => 'and',
-                'property' => $pSrc,
-                'type'     => 'res',
-                'text'     => $idSource,
-            ],
-            [
+        $query = ['resource_class_id' => [$rcValo->id()],'property'=>[],'per_page' => 1];
+        foreach ($sources as $s) {
+            $query['property'][]=[
+                    'joiner'   => 'and',
+                    'property' => $pSrc,
+                    'type'     => 'res',
+                    'text'     => $s,
+                ];
+        }
+        $query['property'][]=[
                 'joiner'   => 'and',
                 'property' => $pCrea,
                 'type'     => 'res',
                 'text'     => $idAgent,
-            ]],
-            'per_page' => 1,
-        ])->getContent();
-
+            ];
+        $existing = $this->api->search('items', $query)->getContent();
         return $existing;
     }
 
     /**
-     * Trouve ou crée un item dctype:Service décrivant l'agent IA EUR.
-     * L'unicité est garantie par la combinaison modèle + URL du service.
+     * Trouve un item dctype:Service décrivant l'agent IA.
+     * L'unicité est garantie par la combinaison action + model.
      */
-    private function findOrCreateAgent(
+    private function findAgent(
         string $action,
-        string $model,
-        string $apiUrl,
-        string $promptTemplate,
-        array  $apiParams
+        string $model
     ) {
         // Recherche un agent existant identifié par le modèle utilisé
         $rcAgent = $this->apiClient->getRc('foaf:Agent');
@@ -1106,10 +1233,81 @@ class IndexController extends AbstractActionController
             ]],
             'per_page' => 1,
         ])->getContent();
+        return $existing;
+    }
 
+    /**
+     * Trouve un item valo:ObjRecherche décrivant un contexte de recherche.
+     * L'unicité est garantie par le titre.
+     */
+    private function findContext(
+        string $titre,
+    ) {
+        $rc = $this->apiClient->getRc('valo:ObjRecherche');
+        $pTitle = $this->apiClient->getProperty('dcterms:title')->id();
+        $title = $titre;
+
+        $existing = $this->api->search('items', [
+            'resource_class_id' => [$rc->id()],
+            'property'          => [[
+                'joiner'   => 'and',
+                'property' => $pTitle,
+                'type'     => 'eq',
+                'text'     => $title,
+            ]],
+            'per_page' => 1,
+        ])->getContent();
+        return $existing;
+    }
+
+    /**
+     * Trouve ou crée un item dctype:Service décrivant un contexte scientifique.
+     * L'unicité est garantie par le titre.
+     */
+    private function findOrCreateContext(
+        string $titre,
+        string $desc,
+    ) {
+        // Recherche un contexte existant identifié par le titre
+        $existing = $this->findContext($titre);
         if (!empty($existing)) {
             return $existing[0];
         }
+        $rc = $this->apiClient->getRc('valo:ObjRecherche');
+        $pTitle = $this->apiClient->getProperty('dcterms:title')->id();
+        $title = $titre;
+
+        // Crée le service
+        $pDesc  = $this->apiClient->getProperty('dcterms:description')->id();
+
+        $data = [
+            'o:resource_class'    => ['o:id' => $rc->id()],
+            'dcterms:title'       => [['@value' => $title, 'type' => 'literal',    'property_id' => $pTitle]],
+            'dcterms:description' => [['@value' => $desc,  'type' => 'literal',    'property_id' => $pDesc]]
+        ];
+
+        return $this->api->create('items', $data, [], ['continueOnError' => true])->getContent();
+    }
+
+    /**
+     * Trouve ou crée un item dctype:Service décrivant l'agent IA EUR.
+     * L'unicité est garantie par la combinaison  action + model.
+     */
+    private function findOrCreateAgent(
+        string $action,
+        string $model,
+        string $apiUrl,
+        string $promptTemplate,
+        array  $apiParams
+    ) {
+        // Recherche un agent existant identifié par le modèle utilisé
+        $existing = $this->findAgent($action,$model);
+        if (!empty($existing)) {
+            return $existing[0];
+        }
+        $rcAgent = $this->apiClient->getRc('foaf:Agent');
+        $pTitle = $this->apiClient->getProperty('dcterms:title')->id();
+        $title = "Agent ".$action." [{$model}]";
 
         // Crée le service
         $pType  = $this->apiClient->getProperty('dcterms:type')->id();
@@ -1127,6 +1325,54 @@ class IndexController extends AbstractActionController
         ];
 
         return $this->api->create('items', $data, [], ['continueOnError' => true])->getContent();
+    }
+
+
+/**
+     * Crée un item valo:Expertises_all enregistrant le résultat complet
+     * de la synthèse des évaluations pour une eur et un axe.
+     */
+    private function createEurSyntheseItem($agent, array $eval, array $refs): void
+    {
+        $rcId   = $this->apiClient->getRc('valo:Expertises_all')->id();
+        $pTitle = $this->apiClient->getProperty('dcterms:title')->id();
+        $pSrc   = $this->apiClient->getProperty('dcterms:source')->id();
+        $pDesc  = $this->apiClient->getProperty('dcterms:description')->id();
+        $pCrea  = $this->apiClient->getProperty('dcterms:creator')->id();
+        $pRank  = $this->apiClient->getProperty('curation:rank')->id();
+        $pData = $this->apiClient->getProperty('curation:data')->id();
+
+        $title = "Evaluation EUR synthèse des convergences : ".$agent->displayTitle()." —> ".$refs["EUR"]." / ".$refs["AXE"]." — " . (new \DateTime())->format('d/m/Y H:i');
+
+        foreach ($refs as $k => $v) {
+            $eval[$k]=$v;
+        }
+
+        $data = [
+            'o:resource_class'    => ['o:id' => $rcId],
+            'dcterms:title'       => [['@value' => $title, 'type' => 'literal', 'property_id' => $pTitle]],
+            'dcterms:creator'      => [['value_resource_id' => $agent->id(), 'type' => 'resource:item', 'property_id' => $pCrea]],
+            'dcterms:description' => [
+                ['@value' => "synthese : ".$eval["synthese"], 'type' => 'literal', 'property_id' => $pDesc],
+                ['@value' => "forces : ".$eval["forces"], 'type' => 'literal', 'property_id' => $pDesc],
+                ['@value' => "vigilances : ".$eval["vigilances"], 'type' => 'literal', 'property_id' => $pDesc],
+                ['@value' => "recommandations : ".$eval["recommandations"], 'type' => 'literal', 'property_id' => $pDesc]
+            ],
+            'curation:rank'       => [[
+                        'property_id' => $pRank,
+                        '@value'      => $eval["score"]."",
+                        'type'        => 'literal',
+                    ]],
+            'curation:data' => [['@value' => json_encode($eval, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'type' => 'literal', 'property_id' => $pData]],
+        ];
+
+        $data['dcterms:source']=[];
+
+        foreach ($refs["sources"] as $s) {
+            $data['dcterms:source'][] = ['value_resource_id' => $s, 'type' => 'resource:item', 'property_id' => $pSrc];
+        }
+
+        $this->api->create('items', $data, [], ['continueOnError' => true]);
     }
 
     /**

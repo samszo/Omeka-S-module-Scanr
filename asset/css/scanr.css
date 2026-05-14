@@ -195,7 +195,7 @@
 /* ── Grille de cartes ── */
 .scanr-kw-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(auto, auto));
     gap: 1rem;
     margin-top: .5rem;
 }
@@ -604,7 +604,7 @@
 
 .scanr-eur-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(auto, auto));
     gap: 1.2rem;
     transition: opacity .3s;
 }
