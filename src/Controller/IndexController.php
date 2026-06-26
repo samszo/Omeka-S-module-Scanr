@@ -219,7 +219,7 @@ class IndexController extends AbstractActionController
             return $this->redirect()->toRoute('admin/scanr');
         }
 
-        $jsonPath = dirname(__DIR__, 3) . '/data/fr-esr-structures-recherche-publiques-actives.json';
+        $jsonPath = dirname(__DIR__, 3) . '/Scanr/data/fr-esr-structures-recherche-publiques-actives.json';
 
         if (!file_exists($jsonPath)) {
             $this->messenger()->addError(sprintf(

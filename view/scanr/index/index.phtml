@@ -43,7 +43,6 @@ $this->headTitle($this->translate('Scanr - Recherche de personnes'));
     </p>
     <p><?php echo $this->translate('Champs mis à jour : sigle, année de création, site web, adresse, code postal, commune.'); ?></p>
     <form method="post" action="<?php echo $this->url('admin/scanr/update-structures'); ?>">
-        <?php echo $this->formCsrf(null, null, ['csrf_element']); ?>
         <button type="submit" class="button" onclick="return confirm('<?php echo $this->translate('Lancer la mise à jour des structures ? Cette opération peut durer plusieurs minutes.'); ?>')">
             <?php echo $this->translate('Lancer la mise à jour'); ?>
         </button>

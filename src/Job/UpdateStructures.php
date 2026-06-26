@@ -165,16 +165,19 @@ class UpdateStructures extends AbstractJob
                 }
 
                 $record     = $structureIndex[$numStr];
-                $updateData = $this->buildUpdateData($record, $propIds);
+                $newValues  = $this->buildUpdateData($record, $propIds);
 
-                if (empty($updateData)) {
+                if (empty($newValues)) {
                     $skipped++;
                     continue;
                 }
 
+                // Fusionne avec les valeurs existantes pour ne rien supprimer
+                $updateData = $this->mergeWithExisting($item, $newValues, $propIds);
+
                 try {
                     $api->update('items', $item->id(), $updateData, [], [
-                        'isPartial'       => true,
+                        'isPartial'        => true,
                         'collectionAction' => 'replace',
                     ]);
                     $updated++;
@@ -202,6 +205,71 @@ class UpdateStructures extends AbstractJob
             'UpdateStructures: terminé. %d traité(s), %d mis à jour, %d ignoré(s).',
             $processed, $updated, $skipped
         ));
+    }
+
+    /**
+     * Fusionne les nouvelles valeurs avec celles déjà présentes sur l'item.
+     *
+     * Pour chaque propriété : conserve toutes les valeurs existantes et ajoute
+     * les nouvelles uniquement si elles ne sont pas déjà présentes (comparaison
+     * sur @value pour les literals, sur @id pour les URIs).
+     *
+     * @param \Omeka\Api\Representation\ItemRepresentation $item
+     * @param array $newValues  Résultat de buildUpdateData()
+     * @param array $propIds    Map term → property_id
+     */
+    private function mergeWithExisting($item, array $newValues, array $propIds): array
+    {
+        $merged = [];
+
+        foreach ($newValues as $term => $newEntries) {
+            // Sérialise les valeurs existantes de ce terme
+            $existing = [];
+            foreach ($item->values() as $vterm => $vdata) {
+                if ($vterm !== $term) continue;
+                foreach ($vdata['values'] as $v) {
+                    $entry = [
+                        'type'        => $v->type(),
+                        'property_id' => $v->property()->id(),
+                    ];
+                    if ($v->type() === 'uri') {
+                        $entry['@id']      = $v->uri();
+                        $entry['o:label']  = $v->value(); // libellé URI optionnel
+                    } else {
+                        $entry['@value']   = $v->value();
+                        $entry['@lang']    = $v->lang() ?: null;
+                    }
+                    $existing[] = $entry;
+                }
+            }
+
+            // Ajoute chaque nouvelle valeur seulement si absente
+            foreach ($newEntries as $new) {
+                $alreadyPresent = false;
+                foreach ($existing as $ex) {
+                    if ($new['type'] === 'uri') {
+                        if (($ex['@id'] ?? '') === ($new['@id'] ?? '')) {
+                            $alreadyPresent = true;
+                            break;
+                        }
+                    } else {
+                        if (($ex['@value'] ?? '') === ($new['@value'] ?? '')) {
+                            $alreadyPresent = true;
+                            break;
+                        }
+                    }
+                }
+                if (!$alreadyPresent) {
+                    $existing[] = $new;
+                }
+            }
+
+            if (!empty($existing)) {
+                $merged[$term] = $existing;
+            }
+        }
+
+        return $merged;
     }
 
     /**
