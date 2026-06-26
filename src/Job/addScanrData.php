@@ -4,6 +4,7 @@ namespace Scanr\Job;
 
 use Omeka\Job\AbstractJob;
 use Omeka\Stdlib\Message;
+use Omeka\Job\Dispatcher;
 
 class addScanrData extends AbstractJob
 {
@@ -25,6 +26,10 @@ class addScanrData extends AbstractJob
         $logger = $services->get('Omeka\Logger');
         $api = $services->get('Omeka\ApiManager');
         $entityManager = $services->get('Omeka\EntityManager');
+        $settings  = $services->get('Omeka\Settings');
+        $dispatcher = $services->get('Omeka\Job\Dispatcher');
+        $classOrg  = ($settings->get('scanr_class_structure') ?? ['foaf:Organization'])[0];
+
         $ids = $this->getArg('ids');
 
         $logger->info(new Message(
@@ -84,7 +89,16 @@ class addScanrData extends AbstractJob
                     }
 
                     try {
-                        $result = $scanR->searchPersons($resource->displayTitle(),0,1);
+
+                        $itemClass = $resource->resourceClass() ? $resource->resourceClass()->term() : null;
+                        if ($itemClass !== $classOrg) {
+                            $result = $scanR->searchPersons($resource->displayTitle(),0,1);
+                        }else if ($resource->value('dcterms:isReferencedBy')) {
+                            $dispatcher->dispatch(\Scanr\Job\UpdateStructures::class, [
+                                'item_id' => $resource->id(),
+                            ]);
+                        }
+
                     } catch (\Exception $e) {
                         $result = false;
                         $logger->warn(new Message(

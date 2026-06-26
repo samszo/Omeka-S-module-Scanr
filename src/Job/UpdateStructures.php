@@ -109,10 +109,11 @@ class UpdateStructures extends AbstractJob
         }
 
         // ── Parcours des items par pages ──────────────────────────────────────
-        $page      = 1;
-        $processed = 0;
-        $updated   = 0;
-        $skipped   = 0;
+        $singleItemId = (int) ($this->getArg('item_id') ?? 0);
+        $page         = 1;
+        $processed    = 0;
+        $updated      = 0;
+        $skipped      = 0;
 
         $logger->info(new Message(
             'UpdateStructures: recherche des items de classe %s avec dcterms:isReferencedBy…', $classOrg
@@ -124,16 +125,23 @@ class UpdateStructures extends AbstractJob
                 break;
             }
 
-            $items = $api->search('items', [
+            $query = [
                 'resource_class_id' => $rcId,
                 'property'          => [[
                     'joiner'   => 'and',
                     'property' => $propIds['dcterms:isReferencedBy'],
-                    'type'     => 'ex',   // has any value
+                    'type'     => 'ex',
                 ]],
                 'per_page' => self::BATCH_SIZE,
                 'page'     => $page,
-            ])->getContent();
+            ];
+
+            // Mode mono-item : filtre sur l'id fourni
+            if ($singleItemId) {
+                $query['id'] = $singleItemId;
+            }
+
+            $items = $api->search('items', $query)->getContent();
 
             if (empty($items)) {
                 break;
@@ -192,11 +200,19 @@ class UpdateStructures extends AbstractJob
                     ));
                 }
 
+                // Géolocalisation via Nominatim
+                $this->geocodeItem($item->id(), $record, $api, $logger);
+
                 unset($item);
             }
 
             unset($items);
             $entityManager->clear();
+
+            // En mode mono-item, une seule page suffit
+            if ($singleItemId) {
+                break;
+            }
 
             $page++;
         }
@@ -267,6 +283,95 @@ class UpdateStructures extends AbstractJob
         }
 
         return $merged;
+    }
+
+    /**
+     * Géolocalise un item via Nominatim et crée/met à jour son mapping_feature.
+     */
+    private function geocodeItem(int $itemId, array $record, $api, $logger): void
+    {
+        $parts = array_filter([
+            $record['adresse']     ?? null,
+            $record['code_postal'] ?? null,
+            $record['commune']     ?? null,
+        ]);
+
+        if (empty($parts)) {
+            return;
+        }
+
+        $address = implode(', ', $parts) . ', France';
+        $coords  = $this->nominatimGeocode($address);
+
+        if ($coords === null) {
+            $logger->info(new Message(
+                'UpdateStructures: item #%d — géocodage sans résultat pour "%s".',
+                $itemId, $address
+            ));
+            return;
+        }
+
+        [$lat, $lng] = $coords;
+
+        try {
+            // Cherche un feature existant pour cet item
+            $existing = $api->search('mapping_features', ['item_id' => $itemId])->getContent();
+
+            $featureData = [
+                'o:item'                                  => ['o:id' => $itemId],
+                'o-module-mapping:geography-type'         => 'Point',
+                'o-module-mapping:geography-coordinates'  => [$lng, $lat],
+            ];
+
+            if (!empty($existing)) {
+                $api->update('mapping_features', $existing[0]->id(), $featureData);
+            } else {
+                $api->create('mapping_features', $featureData);
+            }
+
+            $logger->info(new Message(
+                'UpdateStructures: item #%d géolocalisé (lat=%s, lng=%s).',
+                $itemId, $lat, $lng
+            ));
+        } catch (\Exception $e) {
+            $logger->err(new Message(
+                'UpdateStructures: erreur géolocalisation item #%d — %s', $itemId, $e->getMessage()
+            ));
+        }
+    }
+
+    /**
+     * Interroge l'API Nominatim et retourne [lat, lng] ou null si aucun résultat.
+     */
+    private function nominatimGeocode(string $address): ?array
+    {
+        $url = 'https://nominatim.openstreetmap.org/search?'
+            . http_build_query([
+                'q'              => $address,
+                'format'         => 'json',
+                'limit'          => 1,
+                'addressdetails' => 0,
+            ]);
+
+        $context = stream_context_create([
+            'http' => [
+                'method'  => 'GET',
+                'header'  => "User-Agent: OmekaScanrModule/1.0\r\n",
+                'timeout' => 10,
+            ],
+        ]);
+
+        $raw = @file_get_contents($url, false, $context);
+        if ($raw === false) {
+            return null;
+        }
+
+        $results = json_decode($raw, true);
+        if (empty($results[0]['lat']) || empty($results[0]['lon'])) {
+            return null;
+        }
+
+        return [(float) $results[0]['lat'], (float) $results[0]['lon']];
     }
 
     /**
