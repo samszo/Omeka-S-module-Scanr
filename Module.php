@@ -58,7 +58,7 @@ class Module extends AbstractModule
         $messenger = $plugins->get('messenger');
 
         if (!class_exists(\Common\ManageModuleAndResources::class, false)) {
-            require_once dirname(__DIR__) . '/Common/src/ManageModuleAndResources.php';
+            require_once dirname(__DIR__) . '/Common/src/ManageModuleAndResources.php';            
         }
 
         $config = $services->get('Config');

@@ -13,6 +13,7 @@ return [
         'invokables' => [
             'scanrExpertisesList' => Site\BlockLayout\ExpertisesList::class,
             'scanrEurConvergence' => Site\BlockLayout\EurConvergence::class,
+            'scanrItemsMap'       => Site\BlockLayout\ItemsMap::class,
         ],
     ],
 
@@ -149,6 +150,15 @@ return [
                                     'route' => '/import-jsonl',
                                     'defaults' => [
                                         'action' => 'importJsonl',
+                                    ],
+                                ],
+                            ],
+                            'update-structures' => [
+                                'type' => 'Literal',
+                                'options' => [
+                                    'route' => '/update-structures',
+                                    'defaults' => [
+                                        'action' => 'updateStructures',
                                     ],
                                 ],
                             ],

@@ -34,3 +34,18 @@ $this->headTitle($this->translate('Scanr - Recherche de personnes'));
         ?>
     </p>
 </div>
+
+<div class="scanr-intro">
+    <h2><?php echo $this->translate('Mise à jour des structures de recherche'); ?></h2>
+    <p>
+        <?php echo $this->translate('Met à jour les items de classe <strong>foaf:Organization</strong> à partir du fichier <code>fr-esr-structures-recherche-publiques-actives.json</code> (MESR).'); ?>
+        <?php echo $this->translate('La correspondance est faite via la propriété <strong>dcterms:isReferencedBy</strong> = <em>numero_national_de_structure</em>.'); ?>
+    </p>
+    <p><?php echo $this->translate('Champs mis à jour : sigle, année de création, site web, adresse, code postal, commune.'); ?></p>
+    <form method="post" action="<?php echo $this->url('admin/scanr/update-structures'); ?>">
+        <?php echo $this->formCsrf(null, null, ['csrf_element']); ?>
+        <button type="submit" class="button" onclick="return confirm('<?php echo $this->translate('Lancer la mise à jour des structures ? Cette opération peut durer plusieurs minutes.'); ?>')">
+            <?php echo $this->translate('Lancer la mise à jour'); ?>
+        </button>
+    </form>
+</div>

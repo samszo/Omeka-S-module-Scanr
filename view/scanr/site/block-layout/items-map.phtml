@@ -1,0 +1,221 @@
+<?php
+/**
+ * Block layout "Carte des items" — rendu Leaflet côté site.
+ *
+ * @var string $heading    Titre affiché au-dessus de la carte
+ * @var array  $markers    [{id, title, address, url, lat, lon|null}]
+ * @var int    $mapHeight  Hauteur de la carte en px
+ * @var float  $centerLat  Latitude initiale du centre
+ * @var float  $centerLon  Longitude initiale du centre
+ * @var int    $zoom       Niveau de zoom initial
+ * @var string $ajaxUrl    URL de l'endpoint AJAX pour saveGeocode
+ */
+$escape   = $this->plugin('escapeHtml');
+$assetUrl = $this->plugin('assetUrl');
+
+// Identifiant unique pour gérer plusieurs cartes sur la même page
+$mapId   = 'scanr-map-' . substr(md5(json_encode($markers) . $centerLat . $centerLon), 0, 8);
+$ajaxUrl = $ajaxUrl ?? '';
+
+// Markers JSON : seuls les champs nécessaires au JS
+$markersJson = json_encode(array_map(fn($m) => [
+    'id'      => $m['id'],
+    'title'   => $m['title'],
+    'address' => $m['address'],
+    'url'     => $m['url'],
+    'lat'     => $m['lat'],
+    'lon'     => $m['lon'],
+], $markers), JSON_UNESCAPED_UNICODE);
+?>
+
+<?php $this->headLink()
+    ->appendStylesheet($assetUrl('css/scanr.css', 'Scanr'))
+    ->appendStylesheet('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+?>
+
+<div class="scanr-map-block">
+
+    <?php if ($heading): ?>
+    <h2 class="scanr-map-heading"><?php echo $escape($heading); ?></h2>
+    <?php endif; ?>
+
+    <div class="scanr-map-status" id="<?php echo $mapId; ?>-status" style="display:none">
+        <span class="scanr-map-geocoding-msg">Géocodage en cours…
+            <span id="<?php echo $mapId; ?>-progress"></span>
+        </span>
+    </div>
+
+    <div id="<?php echo $mapId; ?>"
+         class="scanr-map-container"
+         style="height:<?php echo (int)$mapHeight; ?>px">
+    </div>
+
+</div>
+
+<script>
+(function () {
+    const MAP_ID    = <?php echo json_encode($mapId); ?>;
+    const CENTER    = [<?php echo (float)$centerLat; ?>, <?php echo (float)$centerLon; ?>];
+    const ZOOM      = <?php echo (int)$zoom; ?>;
+    const MARKERS   = <?php echo $markersJson; ?>;
+    const AJAX_URL  = <?php echo json_encode($ajaxUrl); ?>;
+    const CACHE_KEY = 'scanr_geo_' + MAP_ID;
+
+    const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+
+    // ── Lecture/écriture du cache sessionStorage ──────────────────────────
+    function geoCache() {
+        try { return JSON.parse(sessionStorage.getItem(CACHE_KEY) || '{}'); } catch (_) { return {}; }
+    }
+    function geoSave(cache) {
+        try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (_) {}
+    }
+
+    // ── Géocodage d'une adresse via Nominatim (rate-limit 1 req/s) ───────
+    function geocode(address) {
+        const url = NOMINATIM + '?q=' + encodeURIComponent(address) + '&format=json&limit=1&addressdetails=0';
+        return fetch(url, { headers: { 'Accept-Language': 'fr' } })
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.length) {
+                    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+                }
+                return null;
+            })
+            .catch(() => null);
+    }
+
+    // ── Initialisation de la carte ────────────────────────────────────────
+    function initMap(resolvedMarkers) {
+        const map = L.map(MAP_ID).setView(CENTER, ZOOM);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            maxZoom: 19,
+        }).addTo(map);
+
+        const bounds = [];
+
+        resolvedMarkers.forEach(function (m) {
+            if (m.lat === null || m.lon === null) return;
+
+            const marker = L.marker([m.lat, m.lon]).addTo(map);
+            const popup  = '<strong><a href="' + escHtml(m.url) + '">' + escHtml(m.title) + '</a></strong>'
+                         + (m.address ? '<br><small>' + escHtml(m.address) + '</small>' : '');
+            marker.bindPopup(popup);
+            bounds.push([m.lat, m.lon]);
+        });
+
+        if (bounds.length > 1) {
+            map.fitBounds(bounds, { padding: [30, 30] });
+        } else if (bounds.length === 1) {
+            map.setView(bounds[0], Math.max(ZOOM, 12));
+        }
+    }
+
+    // ── Pipeline de résolution des coordonnées ────────────────────────────
+    async function resolveMarkers() {
+        const cache    = geoCache();
+        const resolved = [];
+        const toGeocode = [];
+
+        for (const m of MARKERS) {
+            if (m.lat !== null && m.lon !== null) {
+                resolved.push(m);
+            } else if (m.address) {
+                const cached = cache[m.address];
+                if (cached) {
+                    resolved.push(Object.assign({}, m, cached));
+                } else {
+                    resolved.push(m); // placeholder, sera mis à jour
+                    toGeocode.push(m);
+                }
+            }
+        }
+
+        // Charge Leaflet + initialise la carte avec les coords déjà connues
+        loadLeaflet(function () {
+            initMap(resolved);
+
+            if (!toGeocode.length) return;
+
+            const statusEl  = document.getElementById(MAP_ID + '-status');
+            const progressEl = document.getElementById(MAP_ID + '-progress');
+            if (statusEl) statusEl.style.display = '';
+
+            let done = 0;
+            (async function geocodeQueue() {
+                for (const m of toGeocode) {
+                    const geo = await geocode(m.address);
+                    done++;
+                    if (progressEl) progressEl.textContent = done + ' / ' + toGeocode.length;
+
+                    if (geo) {
+                        cache[m.address] = geo;
+
+                        // Ajoute le marker sur la carte
+                        const mapEl = document.getElementById(MAP_ID);
+                        if (mapEl && mapEl._leaflet_map) {
+                            const marker = L.marker([geo.lat, geo.lon]).addTo(mapEl._leaflet_map);
+                            const popup  = '<strong><a href="' + escHtml(m.url) + '">' + escHtml(m.title) + '</a></strong>'
+                                         + '<br><small>' + escHtml(m.address) + '</small>';
+                            marker.bindPopup(popup);
+                        }
+
+                        // Enregistre le géocodage dans le module Mapping (silencieux)
+                        if (AJAX_URL) {
+                            fetch(AJAX_URL + '?action=saveGeocode', {
+                                method:  'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body:    JSON.stringify({
+                                    itemId: m.id,
+                                    lat:    geo.lat,
+                                    lng:    geo.lon,
+                                    label:  m.title,
+                                }),
+                            }).catch(function () {}); // erreur silencieuse (module absent, droit insuffisant…)
+                        }
+                    }
+
+                    // Pause 1,1 s pour respecter le fair-use Nominatim (1 req/s)
+                    if (done < toGeocode.length) await sleep(1100);
+                }
+                geoSave(cache);
+                if (statusEl) statusEl.style.display = 'none';
+            }());
+        });
+    }
+
+    // ── Chargement dynamique de Leaflet ───────────────────────────────────
+    function loadLeaflet(cb) {
+        if (window.L && window.L.map) { cb(); return; }
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        s.onload = function () {
+            // Expose la map sur l'élément DOM pour la récupérer lors du géocodage
+            const origMap = L.map.bind(L);
+            L.map = function (id) {
+                const m = origMap.apply(L, arguments);
+                const el = typeof id === 'string' ? document.getElementById(id) : id;
+                if (el) el._leaflet_map = m;
+                return m;
+            };
+            cb();
+        };
+        document.head.appendChild(s);
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function escHtml(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── Démarrage ─────────────────────────────────────────────────────────
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', resolveMarkers);
+    } else {
+        resolveMarkers();
+    }
+}());
+</script>
