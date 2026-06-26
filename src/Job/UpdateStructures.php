@@ -220,33 +220,34 @@ class UpdateStructures extends AbstractJob
      */
     private function mergeWithExisting($item, array $newValues, array $propIds): array
     {
+        // Sérialise TOUTES les valeurs existantes de l'item
         $merged = [];
-
-        foreach ($newValues as $term => $newEntries) {
-            // Sérialise les valeurs existantes de ce terme
-            $existing = [];
-            foreach ($item->values() as $vterm => $vdata) {
-                if ($vterm !== $term) continue;
-                foreach ($vdata['values'] as $v) {
-                    $entry = [
-                        'type'        => $v->type(),
-                        'property_id' => $v->property()->id(),
-                    ];
-                    if ($v->type() === 'uri') {
-                        $entry['@id']      = $v->uri();
-                        $entry['o:label']  = $v->value(); // libellé URI optionnel
-                    } else {
-                        $entry['@value']   = $v->value();
-                        $entry['@lang']    = $v->lang() ?: null;
-                    }
-                    $existing[] = $entry;
+        foreach ($item->values() as $vterm => $vdata) {
+            $merged[$vterm] = [];
+            foreach ($vdata['values'] as $v) {
+                $entry = [
+                    'type'        => $v->type(),
+                    'property_id' => $v->property()->id(),
+                ];
+                if ($v->type() === 'uri') {
+                    $entry['@id']     = $v->uri();
+                    $entry['o:label'] = $v->value();
+                } else {
+                    $entry['@value'] = $v->value();
+                    $entry['@lang']  = $v->lang() ?: null;
                 }
+                $merged[$vterm][] = $entry;
             }
+        }
 
-            // Ajoute chaque nouvelle valeur seulement si absente
+        // Ajoute les nouvelles valeurs JSON uniquement si absentes
+        foreach ($newValues as $term => $newEntries) {
+            if (!isset($merged[$term])) {
+                $merged[$term] = [];
+            }
             foreach ($newEntries as $new) {
                 $alreadyPresent = false;
-                foreach ($existing as $ex) {
+                foreach ($merged[$term] as $ex) {
                     if ($new['type'] === 'uri') {
                         if (($ex['@id'] ?? '') === ($new['@id'] ?? '')) {
                             $alreadyPresent = true;
@@ -260,12 +261,8 @@ class UpdateStructures extends AbstractJob
                     }
                 }
                 if (!$alreadyPresent) {
-                    $existing[] = $new;
+                    $merged[$term][] = $new;
                 }
-            }
-
-            if (!empty($existing)) {
-                $merged[$term] = $existing;
             }
         }
 

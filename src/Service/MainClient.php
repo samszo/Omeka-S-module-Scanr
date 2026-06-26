@@ -242,7 +242,8 @@ abstract class MainClient
         if (!empty($personData['items'])) {
             $itemData = json_decode(json_encode($personData['items'][0]), true);
         } else {
-            $itemData = ['o:resource_class' => ['o:id' => $this->classPerson]];
+            $idClass = $this->getRc($this->classPerson)->id();
+            $itemData = ['o:resource_class' => ['o:id' => $idClass]];
             if (!empty($this->templatePerson)) {
                 $itemData['o:resource_template'] = ['o:id' => $this->templatePerson[0]];
             }
