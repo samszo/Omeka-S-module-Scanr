@@ -70,21 +70,32 @@ class IndexController extends AbstractActionController
     protected $auth;
 
 
-    public function __construct(AuthenticationService $auth, ApiClient $apiClient, JsonlClient $jsonlClient, DuckClient $duckClient, SqlClient $sqlClient, SearchForm $searchForm, $api, $dispatcher, $settings = null, $userSettings = null)
+    /**
+     * @var \Scanr\Service\Geocoding
+     */
+    protected $geocoding;
+
+    /**
+     * @var \Scanr\Service\StructuresUpdater
+     */
+    protected $structuresUpdater;
+
+    public function __construct(AuthenticationService $auth, ApiClient $apiClient, JsonlClient $jsonlClient, DuckClient $duckClient, SqlClient $sqlClient, SearchForm $searchForm, $api, $dispatcher, $settings = null, $userSettings = null, $geocoding = null, $structuresUpdater = null)
     {
-        $this->auth         = $auth;
-        $this->apiClient    = $apiClient;
-        $this->duckClient   = $duckClient;
-        $this->jsonlClient  = $jsonlClient;
-        $this->sqlClient    = $sqlClient;
-        $this->searchForm   = $searchForm;
-        $this->api          = $api;
-        $this->dispatcher   = $dispatcher;
-        $this->settings     = $settings;
-        $this->userSettings = $userSettings;
+        $this->auth               = $auth;
+        $this->apiClient          = $apiClient;
+        $this->duckClient         = $duckClient;
+        $this->jsonlClient        = $jsonlClient;
+        $this->sqlClient          = $sqlClient;
+        $this->searchForm         = $searchForm;
+        $this->api                = $api;
+        $this->dispatcher         = $dispatcher;
+        $this->settings           = $settings;
+        $this->userSettings       = $userSettings;
+        $this->geocoding          = $geocoding;
+        $this->structuresUpdater  = $structuresUpdater;
 
         $this->setRequester();
-
     }
 
 
@@ -661,37 +672,85 @@ class IndexController extends AbstractActionController
             }
         }
 
+        // ── UPDATE STRUCTURE (JSON MESR → item + géocodage) ──────────────────
+        if ($action === 'updateStructure') {
+            $body   = json_decode($request->getContent(), true) ?? [];
+            $itemId = (int) ($body['itemId'] ?? 0);
+
+            if (!$itemId) {
+                return new JsonModel(['ok' => false, 'message' => 'itemId requis']);
+            }
+
+            try {
+                $this->structuresUpdater->run(['item_id' => $itemId]);
+                return new JsonModel(['ok' => true]);
+            } catch (\Exception $e) {
+                return new JsonModel(['ok' => false, 'message' => $e->getMessage()]);
+            }
+        }
+
+        // ── GEOCODE (Adresse → coordonnées) ──────────────────────────────────
+        if ($action === 'geocode') {
+            $body   = json_decode($request->getContent(), true) ?? [];
+            $itemId = (int) ($body['itemId'] ?? 0);
+
+            if (!$itemId) {
+                return new JsonModel(['ok' => false, 'message' => 'itemId requis']);
+            }
+
+            try {
+                $item    = $this->api->read('items', $itemId)->getContent();
+                $address = $this->geocoding->addressFromItem($item);
+
+                if (!$address) {
+                    return new JsonModel(['ok' => false, 'message' => 'Aucune adresse trouvée sur cet item (schema:address, schema:postalCode, schema:addressLocality)']);
+                }
+
+                $coords = $this->geocoding->geocodeAddress($address);
+
+                if (!$coords) {
+                    return new JsonModel(['ok' => false, 'message' => "Aucun résultat de géocodage pour : {$address}"]);
+                }
+
+                // Récupère le marker existant s'il y en a un
+                $existing = $this->api->search('mapping_features', ['item_id' => $itemId])->getContent();
+                $currentLat = $currentLng = null;
+                if (!empty($existing)) {
+                    // Récupère lat/lng depuis le feature existant via JSON-LD
+                    $geo = json_decode(json_encode($existing[0]), true);
+                    $currentLat = $geo['o-module-mapping:lat'] ?? null;
+                    $currentLng = $geo['o-module-mapping:lng'] ?? null;
+                }
+
+                return new JsonModel([
+                    'ok'         => true,
+                    'address'    => $address,
+                    'lat'        => $coords['lat'],
+                    'lng'        => $coords['lng'],
+                    'label'      => $coords['label'],
+                    'currentLat' => $currentLat,
+                    'currentLng' => $currentLng,
+                    'hasFeature' => !empty($existing),
+                ]);
+            } catch (\Exception $e) {
+                return new JsonModel(['ok' => false, 'message' => $e->getMessage()]);
+            }
+        }
+
         // ── SAVE GEOCODE (module Mapping) ─────────────────────────────────────
         if ($action === 'saveGeocode') {
             $body   = json_decode($request->getContent(), true) ?? [];
             $itemId = (int)   ($body['itemId'] ?? 0);
             $lat    = (float) ($body['lat']    ?? 0);
             $lng    = (float) ($body['lng']    ?? 0);
-            $label  = trim((string)($body['label'] ?? ''));
 
             if (!$itemId || ($lat === 0.0 && $lng === 0.0)) {
                 return new JsonModel(['ok' => false, 'message' => 'itemId, lat et lng requis']);
             }
 
             try {
-                // Vérifie si un marker existe déjà pour éviter les doublons
-                $existing = $this->api->search('mapping_markers', [
-                    'item_id'  => $itemId,
-                    'per_page' => 1,
-                ])->getContent();
-
-                if (!empty($existing)) {
-                    return new JsonModel(['ok' => true, 'already' => true]);
-                }
-
-                $this->api->create('mapping_markers', [
-                    'o:item'                 => ['o:id' => $itemId],
-                    'o-module-mapping:lat'   => $lat,
-                    'o-module-mapping:lng'   => $lng,
-                    'o-module-mapping:label' => $label,
-                ]);
-
-                return new JsonModel(['ok' => true]);
+                $this->structuresUpdater->saveFeature($itemId, $lat, $lng, $this->api);
+                return new JsonModel(['ok' => true, 'lat' => $lat, 'lng' => $lng]);
             } catch (\Exception $e) {
                 return new JsonModel(['ok' => false, 'message' => $e->getMessage()]);
             }

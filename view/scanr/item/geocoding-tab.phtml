@@ -1,0 +1,211 @@
+<?php
+/**
+ * Onglet "Geocoding" de la page admin d'un item foaf:Organization.
+ *
+ * @var \Omeka\Api\Representation\ItemRepresentation $item
+ * @var string      $address    Adresse postale construite depuis les propriétés de l'item
+ * @var float|null  $currentLat Latitude du marker existant (null si aucun)
+ * @var float|null  $currentLng Longitude du marker existant (null si aucun)
+ */
+$escape   = $this->plugin('escapeHtml');
+$url      = $this->plugin('url');
+$assetUrl = $this->plugin('assetUrl');
+
+$itemId  = $item ? $item->id() : 0;
+$ajaxUrl = $url('admin/scanr/expertise-ajax', [], ['force_canonical' => false]);
+?>
+
+<?php
+$this->headLink()
+    ->appendStylesheet($assetUrl('css/scanr.css', 'Scanr'))
+    ->appendStylesheet($assetUrl('node_modules/leaflet/dist/leaflet.css', 'Mapping'));
+?>
+
+<div id="scanr-geocoding" class="section">
+
+    <h3>Géolocalisation</h3>
+
+    <?php /* ── Adresse source ── */ ?>
+    <div class="scanr-geocoding-address">
+        <strong>Adresse de l'item :</strong>
+        <?php if ($address): ?>
+            <span id="scanr-geo-address"><?php echo $escape($address); ?></span>
+        <?php else: ?>
+            <em>Aucune adresse détectée (schema:address, schema:postalCode, schema:addressLocality)</em>
+        <?php endif; ?>
+    </div>
+
+    <?php /* ── Coordonnées actuelles ── */ ?>
+    <div class="scanr-geocoding-current" id="scanr-geo-current" style="margin-top:.5rem">
+        <?php if ($currentLat !== null): ?>
+            Marker existant : <strong id="scanr-geo-latlng"><?php echo $escape((string)$currentLat); ?>, <?php echo $escape((string)$currentLng); ?></strong>
+        <?php else: ?>
+            <span id="scanr-geo-latlng" style="color:#888">Aucun marker enregistré</span>
+        <?php endif; ?>
+    </div>
+
+    <?php /* ── Barre d'actions ── */ ?>
+    <div class="scanr-geocoding-toolbar" style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+        <button id="scanr-btn-update" class="button">
+            Récupérer depuis le JSON MESR
+        </button>
+        <?php if ($address): ?>
+            <button id="scanr-btn-geocode" class="button">
+                Géocoder à partir de l'adresse
+            </button>
+        <?php endif; ?>
+        <button id="scanr-btn-save" class="button success" style="display:none">
+            Sauvegarder la position
+        </button>
+    </div>
+
+    <div id="scanr-geo-msg" style="margin-top:.5rem;font-style:italic"></div>
+
+    <?php /* ── Carte Leaflet ── */ ?>
+    <div id="scanr-geo-map"
+         style="height:420px;margin-top:1rem;border:1px solid #ccc;border-radius:4px">
+    </div>
+
+</div>
+
+<script>
+(function () {
+    const ITEM_ID   = <?php echo (int) $itemId; ?>;
+    const AJAX_URL  = <?php echo json_encode($ajaxUrl); ?>;
+    const INIT_LAT  = <?php echo ($currentLat !== null) ? (float) $currentLat : 'null'; ?>;
+    const INIT_LNG  = <?php echo ($currentLng !== null) ? (float) $currentLng : 'null'; ?>;
+    const HAS_FEAT  = <?php echo ($currentLat !== null) ? 'true' : 'false'; ?>;
+
+    let map, marker, pendingCoords = null;
+
+    function initMap() {
+        const center = (INIT_LAT && INIT_LNG) ? [INIT_LAT, INIT_LNG] : [46.8, 2.3];
+        const zoom   = (INIT_LAT && INIT_LNG) ? 13 : 5;
+
+        map = L.map('scanr-geo-map').setView(center, zoom);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            maxZoom: 19,
+        }).addTo(map);
+
+        if (INIT_LAT && INIT_LNG) {
+            marker = L.marker([INIT_LAT, INIT_LNG]).addTo(map);
+        }
+
+        // Clic sur la carte pour repositionner manuellement
+        map.on('click', function (e) {
+            const { lat, lng } = e.latlng;
+            placeMarker(lat, lng);
+            setPending(lat, lng, 'Position choisie manuellement');
+        });
+    }
+
+    function placeMarker(lat, lng) {
+        if (marker) {
+            marker.setLatLng([lat, lng]);
+        } else {
+            marker = L.marker([lat, lng]).addTo(map);
+        }
+        map.setView([lat, lng], Math.max(map.getZoom(), 13));
+    }
+
+    function setPending(lat, lng, msg) {
+        pendingCoords = { lat, lng };
+        document.getElementById('scanr-geo-latlng').textContent = lat.toFixed(6) + ', ' + lng.toFixed(6);
+        document.getElementById('scanr-geo-msg').textContent = msg;
+        document.getElementById('scanr-btn-save').style.display = '';
+    }
+
+    function setMsg(text, ok = true) {
+        const el = document.getElementById('scanr-geo-msg');
+        el.textContent = text;
+        el.style.color = ok ? '' : '#c00';
+    }
+
+    // ── Récupérer depuis le JSON MESR ────────────────────────────────────────
+    document.getElementById('scanr-btn-update').addEventListener('click', function () {
+        this.disabled = true;
+        setMsg('Mise à jour depuis le JSON MESR en cours…');
+
+        fetch(AJAX_URL + '?action=updateStructure', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId: ITEM_ID }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) {
+                setMsg(data.message || 'Erreur lors de la mise à jour', false);
+                return;
+            }
+            setMsg('Données mises à jour. Rechargement de la page…');
+            setTimeout(() => location.reload(), 1200);
+        })
+        .catch(e => setMsg('Erreur réseau : ' + e.message, false))
+        .finally(() => { this.disabled = false; });
+    });
+
+    // ── Géocoder ──────────────────────────────────────────────────────────────
+    const btnGeocode = document.getElementById('scanr-btn-geocode');
+    if (btnGeocode) {
+        btnGeocode.addEventListener('click', function () {
+            btnGeocode.disabled = true;
+            setMsg('Géocodage en cours…');
+
+            fetch(AJAX_URL + '?action=geocode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ itemId: ITEM_ID }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok) {
+                    setMsg(data.message || 'Erreur de géocodage', false);
+                    return;
+                }
+                placeMarker(data.lat, data.lng);
+                setPending(data.lat, data.lng, 'Résultat : ' + data.label);
+            })
+            .catch(e => setMsg('Erreur réseau : ' + e.message, false))
+            .finally(() => { btnGeocode.disabled = false; });
+        });
+    }
+
+    // ── Sauvegarder ───────────────────────────────────────────────────────────
+    document.getElementById('scanr-btn-save').addEventListener('click', function () {
+        if (!pendingCoords) return;
+        this.disabled = true;
+        setMsg('Sauvegarde en cours…');
+
+        fetch(AJAX_URL + '?action=saveGeocode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId: ITEM_ID, lat: pendingCoords.lat, lng: pendingCoords.lng }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                setMsg('Position sauvegardée.');
+                pendingCoords = null;
+                document.getElementById('scanr-btn-save').style.display = 'none';
+            } else {
+                setMsg(data.message || 'Erreur lors de la sauvegarde', false);
+            }
+        })
+        .catch(e => setMsg('Erreur réseau : ' + e.message, false))
+        .finally(() => { this.disabled = false; });
+    });
+
+    // Initialise la carte après chargement de Leaflet
+    if (typeof L !== 'undefined') {
+        initMap();
+    } else {
+        document.querySelector('link[href*="leaflet"]')
+            .addEventListener('load', initMap);
+        // fallback si l'événement load est déjà passé
+        setTimeout(function () { if (!map) initMap(); }, 500);
+    }
+})();
+</script>
+
+<?php $this->headScript()->appendFile($assetUrl('node_modules/leaflet/dist/leaflet.js', 'Mapping')); ?>

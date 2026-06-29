@@ -1,0 +1,231 @@
+<?php
+/**
+ * Block layout "Carte des organisations".
+ *
+ * @var string $heading
+ * @var array  $orgs   [{id, title, url, lat, lng, sigle, address, created, site_web, members[]}]
+ * @var array  $edges  [{from, to, collabs:[{title,url}]}]
+ * @var int    $mapHeight
+ * @var float  $centerLat
+ * @var float  $centerLng
+ * @var int    $zoom
+ */
+$escape   = $this->plugin('escapeHtml');
+$assetUrl = $this->plugin('assetUrl');
+
+$mapId   = 'scanr-orgmap-' . substr(md5(json_encode(array_column($orgs, 'id'))), 0, 8);
+$orgsJson  = json_encode($orgs,  JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
+$edgesJson = json_encode($edges, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
+?>
+
+<?php $this->headLink()
+    ->appendStylesheet($assetUrl('node_modules/leaflet/dist/leaflet.css', 'Mapping'))
+    ->appendStylesheet($assetUrl('node_modules/leaflet.markercluster/dist/MarkerCluster.css', 'Mapping'))
+    ->appendStylesheet($assetUrl('node_modules/leaflet.markercluster/dist/MarkerCluster.Default.css', 'Mapping'))
+    ->appendStylesheet($assetUrl('css/scanr.css', 'Scanr'));
+?>
+
+<div class="scanr-orgmap-block">
+
+    <?php if ($heading): ?>
+    <h2 class="scanr-map-heading"><?php echo $escape($heading); ?></h2>
+    <?php endif; ?>
+
+    <div class="scanr-orgmap-toolbar" style="margin-bottom:.5rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <label style="font-weight:600">Filtrer :</label>
+        <input id="<?php echo $mapId; ?>-filter" type="text"
+               placeholder="Nom, sigle, ville…"
+               style="padding:.3rem .6rem;border:1px solid #ccc;border-radius:3px;min-width:200px" />
+        <span id="<?php echo $mapId; ?>-count" style="color:#666;font-size:.9em"></span>
+        <label style="margin-left:auto">
+            <input type="checkbox" id="<?php echo $mapId; ?>-links" checked />
+            Afficher les liens de collaboration
+        </label>
+    </div>
+
+    <div id="<?php echo $mapId; ?>"
+         style="height:<?php echo (int)$mapHeight; ?>px;border:1px solid #ccc;border-radius:4px">
+    </div>
+
+</div>
+
+<script>
+(function () {
+    const MAP_ID    = <?php echo json_encode($mapId); ?>;
+    const CENTER    = [<?php echo (float)$centerLat; ?>, <?php echo (float)$centerLng; ?>];
+    const ZOOM      = <?php echo (int)$zoom; ?>;
+    const ORGS      = <?php echo $orgsJson; ?>;
+    const EDGES     = <?php echo $edgesJson; ?>;
+
+    let map, clusterGroup, geoLayer;
+    // orgId → L.Marker
+    const markerIndex = {};
+
+    // ── Popup HTML d'une organisation ────────────────────────────────────────
+    function orgPopup(o) {
+        let html = '<div class="scanr-org-popup">';
+        html += '<strong><a href="' + esc(o.url) + '" target="_blank">' + esc(o.title) + '</a></strong>';
+        if (o.sigle)   html += ' <em>(' + esc(o.sigle) + ')</em>';
+        if (o.address) html += '<br><small>📍 ' + esc(o.address) + '</small>';
+        if (o.created) html += '<br><small>📅 Création : ' + esc(o.created) + '</small>';
+        if (o.site_web) html += '<br><small>🌐 <a href="' + esc(o.site_web) + '" target="_blank">' + esc(o.site_web) + '</a></small>';
+        if (o.members && o.members.length) {
+            html += '<br><details><summary><small>' + o.members.length + ' membre(s)</small></summary><ul style="margin:.3rem 0 0 1rem;padding:0">';
+            o.members.slice(0, 20).forEach(function (m) {
+                html += '<li><small>' + esc(m) + '</small></li>';
+            });
+            if (o.members.length > 20) html += '<li><small>…</small></li>';
+            html += '</ul></details>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    // ── GeoJSON des liens de collaboration ────────────────────────────────────
+    function buildGeoJSON(activeOrgIds) {
+        const features = [];
+        const set = activeOrgIds ? new Set(activeOrgIds) : null;
+
+        EDGES.forEach(function (edge) {
+            const a = ORGS.find(function (o) { return o.id === edge.from; });
+            const b = ORGS.find(function (o) { return o.id === edge.to; });
+            if (!a || !b) return;
+            if (set && (!set.has(a.id) || !set.has(b.id))) return;
+
+            const titles = (edge.collabs || []).map(function (c) {
+                return c.url
+                    ? '<a href="' + esc(c.url) + '" target="_blank">' + esc(c.title) + '</a>'
+                    : esc(c.title);
+            }).join('<br>');
+
+            features.push({
+                type: 'Feature',
+                geometry: {
+                    type: 'LineString',
+                    coordinates: [[a.lng, a.lat], [b.lng, b.lat]],
+                },
+                properties: {
+                    from:   a.title,
+                    to:     b.title,
+                    popup:  '<strong>' + esc(a.title) + ' ↔ ' + esc(b.title) + '</strong>'
+                          + (titles ? '<br><small>' + titles + '</small>' : ''),
+                    weight: Math.min(1 + (edge.collabs || []).length, 6),
+                },
+            });
+        });
+
+        return { type: 'FeatureCollection', features: features };
+    }
+
+    // ── Dessin / redessine les liens ──────────────────────────────────────────
+    function renderLinks(activeOrgIds) {
+        if (geoLayer) {
+            map.removeLayer(geoLayer);
+            geoLayer = null;
+        }
+        if (!document.getElementById(MAP_ID + '-links').checked) return;
+
+        geoLayer = L.geoJSON(buildGeoJSON(activeOrgIds), {
+            style: function (feature) {
+                return {
+                    color:   '#e05',
+                    weight:  feature.properties.weight,
+                    opacity: 0.55,
+                };
+            },
+            onEachFeature: function (feature, layer) {
+                layer.bindPopup(feature.properties.popup, { maxWidth: 320 });
+            },
+        }).addTo(map);
+    }
+
+    // ── Filtrage des markers ───────────────────────────────────────────────────
+    function applyFilter(query) {
+        const q = query.toLowerCase().trim();
+        const activeIds = [];
+
+        clusterGroup.clearLayers();
+
+        ORGS.forEach(function (o) {
+            const match = !q
+                || o.title.toLowerCase().includes(q)
+                || (o.sigle   && o.sigle.toLowerCase().includes(q))
+                || (o.address && o.address.toLowerCase().includes(q));
+
+            if (match) {
+                activeIds.push(o.id);
+                const m = markerIndex[o.id];
+                if (m) clusterGroup.addLayer(m);
+            }
+        });
+
+        const countEl = document.getElementById(MAP_ID + '-count');
+        if (countEl) countEl.textContent = activeIds.length + ' / ' + ORGS.length + ' organisations';
+
+        renderLinks(q ? activeIds : null);
+    }
+
+    // ── Initialisation ─────────────────────────────────────────────────────────
+    function init() {
+        map = L.map(MAP_ID).setView(CENTER, ZOOM);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            maxZoom: 19,
+        }).addTo(map);
+
+        clusterGroup = L.markerClusterGroup({ chunkedLoading: true });
+
+        const bounds = [];
+
+        ORGS.forEach(function (o) {
+            const m = L.marker([o.lat, o.lng]);
+            m.bindPopup(orgPopup(o), { maxWidth: 340 });
+            markerIndex[o.id] = m;
+            clusterGroup.addLayer(m);
+            bounds.push([o.lat, o.lng]);
+        });
+
+        map.addLayer(clusterGroup);
+
+        if (bounds.length > 1) {
+            map.fitBounds(bounds, { padding: [30, 30] });
+        } else if (bounds.length === 1) {
+            map.setView(bounds[0], 12);
+        }
+
+        // Liens initiaux
+        renderLinks(null);
+
+        // Compteur initial
+        const countEl = document.getElementById(MAP_ID + '-count');
+        if (countEl) countEl.textContent = ORGS.length + ' / ' + ORGS.length + ' organisations';
+
+        // Filtre texte
+        document.getElementById(MAP_ID + '-filter').addEventListener('input', function () {
+            applyFilter(this.value);
+        });
+
+        // Toggle liens
+        document.getElementById(MAP_ID + '-links').addEventListener('change', function () {
+            renderLinks(null);
+        });
+    }
+
+    function esc(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+}());
+</script>
+
+<?php
+$this->headScript()
+    ->appendFile($assetUrl('node_modules/leaflet/dist/leaflet.js', 'Mapping'))
+    ->appendFile($assetUrl('node_modules/leaflet.markercluster/dist/leaflet.markercluster.js', 'Mapping'));
+?>

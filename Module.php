@@ -84,13 +84,13 @@ class Module extends AbstractModule
         $sharedEventManager->attach(
             'Omeka\Controller\Admin\Item',
             'view.show.section_nav',
-            [$this, 'addExpertisesTab']
+            [$this, 'addScanrTab']
         );
 
         $sharedEventManager->attach(
             'Omeka\Controller\Admin\Item',
             'view.show.after',
-            [$this, 'renderExpertisesTab']
+            [$this, 'renderScanrTab']
         );
 
         $sharedEventManager->attach(
@@ -105,7 +105,7 @@ class Module extends AbstractModule
             [$this, 'formAddElementsResourceBatchUpdateForm']
         );
 
-                // Ajout du paramètre utilisateur
+        // Ajout du paramètre utilisateur
         $sharedEventManager->attach(
             \Omeka\Form\UserForm::class,
             'form.add_elements',
@@ -143,6 +143,32 @@ class Module extends AbstractModule
         $fieldset = $formElementManager->get(BatchEditFieldset::class);
 
         $form->add($fieldset);
+    }
+
+    /**
+     * Déclenche StructuresUpdater sur un item unique après un PATCH.
+     */
+    public function handleItemUpdatePost(Event $event): void
+    {
+        /** @var \Omeka\Api\Response $response */
+        $response = $event->getParam('response');
+        $item     = $response->getContent();
+
+        $services = $this->getServiceLocator();
+        $settings = $services->get('Omeka\Settings');
+        $classOrg = ($settings->get('scanr_class_structure') ?? ['foaf:Organization'])[0];
+        $itemClass = $item->resourceClass() ? $item->resourceClass()->term() : null;
+
+        if ($itemClass !== $classOrg) {
+            return;
+        }
+
+        if (!$item->value('dcterms:isReferencedBy')) {
+            return;
+        }
+
+        $updater = $services->get('Scanr\StructuresUpdater');
+        $updater->run(['item_id' => $item->id()]);
     }
 
     /**
@@ -195,25 +221,77 @@ class Module extends AbstractModule
         $messenger->addSuccess($message);
     }
 
-    public function addExpertisesTab(Event $event): void
+    public function addScanrTab(Event $event): void
     {
         $view = $event->getTarget();
         $services = $this->getServiceLocator();
         $settings = $services->get('Omeka\Settings');
-        $item = $this->isPerson($view,$settings);
+        $item = $view->vars()->offsetGet('item');
+
+        $this->addExpertisesTab($event,$item,$settings);
+        $this->addGeocodingTab($event,$item,$settings);
+    }
+
+
+    public function addExpertisesTab(Event $event,$item,$settings): void
+    {
+        $item = $this->isPerson($item,$settings);
         if (!$item) return;
         $sectionNav = $event->getParam('section_nav');
         $sectionNav['scanr-expertises'] = 'Expertises'; // @translate
         $event->setParam('section_nav', $sectionNav);
     }
 
-    public function renderExpertisesTab(Event $event): void
+    public function addGeocodingTab(Event $event,$item,$settings): void
+    {
+        $item = $this->isStructure($item,$settings);
+        if (!$item) return;
+        $sectionNav = $event->getParam('section_nav');
+        $sectionNav['scanr-geocoding'] = 'Geocoding'; // @translate
+        $event->setParam('section_nav', $sectionNav);
+    }
+
+    public function renderScanrTab(Event $event): void
     {
         $view = $event->getTarget();
         $services = $this->getServiceLocator();
         $settings = $services->get('Omeka\Settings');
+        $item = $view->vars()->offsetGet('item');
 
-        $item = $this->isPerson($view, $settings);
+        $this->renderExpertisesTab($event,$view,$item,$settings,$services);
+        $this->renderGeocodingTab($event,$view,$item,$settings,$services);
+    }
+
+    public function renderGeocodingTab(Event $event,$view,$item,$settings,$services): void
+    {
+        $item = $this->isStructure($item, $settings);
+        if (!$item) return;
+        if (!$this->isUser($view, $services)) return;
+
+        $api      = $services->get('Omeka\ApiManager');
+        $geocoding = $services->get('Scanr\Geocoding');
+
+        // Feature cartographique existant pour cet item
+        $features   = $api->search('mapping_features', ['item_id' => $item->id()])->getContent();
+        $currentLat = null;
+        $currentLng = null;
+        if (!empty($features)) {
+            $coords     = $features[0]->geographyCoordinates(); // [lng, lat]
+            $currentLng = $coords[0] ?? null;
+            $currentLat = $coords[1] ?? null;
+        }
+
+        echo $view->partial('scanr/item/geocoding-tab', [
+            'item'       => $item,
+            'address'    => $geocoding->addressFromItem($item),
+            'currentLat' => $currentLat,
+            'currentLng' => $currentLng,
+        ]);
+    }
+
+    public function renderExpertisesTab(Event $event,$view,$item,$settings,$services): void
+    {
+        $item = $this->isPerson($item, $settings);
         if (!$item) return;
         if(!$this->isUser($view, $services))return;
 
@@ -224,8 +302,7 @@ class Module extends AbstractModule
         echo $view->partial('scanr/item/expertises-tab', ['item' => $item, 'classConceptId'=> $rc->id()]);
     }
 
-    public function isPerson($view, $settings){
-        $item = $view->vars()->offsetGet('item');
+    public function isPerson($item, $settings){
         //affiche l'onglet que pour les items d'enseignant chercheur
         $classPerson = $settings->get('scanr_class_person')[0];
         $classItem = $item->resourceClass() ?  $item->resourceClass()->term() : null;
@@ -235,6 +312,17 @@ class Module extends AbstractModule
             return $item;
         }
     }
+    public function isStructure($item, $settings){
+        //affiche l'onglet que pour les items d'enseignant chercheur
+        $classStruc = $settings->get('scanr_class_structure')[0];
+        $classItem = $item->resourceClass() ?  $item->resourceClass()->term() : null;
+        if (!$item || $classStruc != $classItem) {
+            return false;
+        }else{
+            return $item;
+        }
+    }
+
     public function isUser($view,  $services){
         $auth = $services->get('Omeka\AuthenticationService');
         $user =  $auth->getIdentity();

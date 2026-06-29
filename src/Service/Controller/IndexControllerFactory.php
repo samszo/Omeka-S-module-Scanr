@@ -21,7 +21,9 @@ class IndexControllerFactory implements FactoryInterface
             $services->get('Omeka\ApiManager'),
             $services->get(\Omeka\Job\Dispatcher::class),
             $services->get('Omeka\Settings'),
-            $services->get('Omeka\Settings\User')
+            $services->get('Omeka\Settings\User'),
+            $services->get('Scanr\Geocoding'),
+            $services->get('Scanr\StructuresUpdater')
         );
     }
 }

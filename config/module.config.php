@@ -11,9 +11,10 @@ return [
 
     'block_layouts' => [
         'invokables' => [
-            'scanrExpertisesList' => Site\BlockLayout\ExpertisesList::class,
-            'scanrEurConvergence' => Site\BlockLayout\EurConvergence::class,
-            'scanrItemsMap'       => Site\BlockLayout\ItemsMap::class,
+            'scanrExpertisesList'  => Site\BlockLayout\ExpertisesList::class,
+            'scanrEurConvergence'  => Site\BlockLayout\EurConvergence::class,
+            'scanrItemsMap'        => Site\BlockLayout\ItemsMap::class,
+            'scanrOrganisationsMap'=> Site\BlockLayout\OrganisationsMap::class,
         ],
     ],
 
@@ -25,10 +26,12 @@ return [
 
     'service_manager' => [
         'factories' => [
-            'Scanr\ApiClient'  => Service\ApiClientFactory::class,
-            'Scanr\DuckClient' => Service\DuckClientFactory::class,
-            'Scanr\JsonlClient'=> Service\JsonlClientFactory::class,
-            'Scanr\SqlClient'  => Service\SqlClientFactory::class,
+            'Scanr\ApiClient'         => Service\ApiClientFactory::class,
+            'Scanr\DuckClient'        => Service\DuckClientFactory::class,
+            'Scanr\JsonlClient'       => Service\JsonlClientFactory::class,
+            'Scanr\SqlClient'         => Service\SqlClientFactory::class,
+            'Scanr\StructuresUpdater' => Service\StructuresUpdaterFactory::class,
+            'Scanr\Geocoding'         => Service\GeocodingFactory::class,
         ],
     ],
     'controllers' => [
