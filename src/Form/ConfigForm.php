@@ -63,6 +63,43 @@ class ConfigForm extends Form
                 ],
             ])
             ->add([
+                'name' => 'scanr_orcid_client_id',
+                'type' => Element\Text::class,
+                'options' => [
+                    'label' => 'ORCID - Client ID',
+                    'info'  => 'Identifiant client public API ORCID, obtenu en enregistrant une application sur https://orcid.org (Developer Tools > Register for ORCID Public API Credentials).',
+                ],
+                'attributes' => [
+                    'id'       => 'scanr_orcid_client_id',
+                    'required' => false,
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_orcid_client_secret',
+                'type' => Element\Password::class,
+                'options' => [
+                    'label' => 'ORCID - Client Secret',
+                    'info'  => 'Secret associé au client ID ORCID, utilisé pour obtenir un jeton d\'accès (OAuth2 client_credentials).',
+                ],
+                'attributes' => [
+                    'id'       => 'scanr_orcid_client_secret',
+                    'required' => false,
+                ],
+            ])
+            ->add([
+                'name' => 'scanr_orcid_redirect_uri',
+                'type' => Element\Text::class,
+                'options' => [
+                    'label' => 'ORCID - Redirect URI',
+                    'info'  => 'URL de redirection déclarée lors de l\'enregistrement de l\'application ORCID. Non utilisée par ce module (recherche via OAuth2 client_credentials, sans redirection utilisateur), conservée ici pour mémoire lors du renouvellement des identifiants.',
+                ],
+                'attributes' => [
+                    'id'          => 'scanr_orcid_redirect_uri',
+                    'required'    => false,
+                    'placeholder' => 'https://mon-site.example.org/',
+                ],
+            ])
+            ->add([
                 'name' => 'scanr_json_path',
                 'type' => Element\Text::class,
                 'options' => [

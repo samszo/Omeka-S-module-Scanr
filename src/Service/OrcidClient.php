@@ -11,10 +11,25 @@ use Laminas\Http\Client as HttpClient;
  */
 class OrcidClient extends MainClient
 {
-    protected const API_URL = 'https://pub.orcid.org/v3.0';
+    protected const API_URL   = 'https://pub.orcid.org/v3.0';
+    protected const TOKEN_URL = 'https://orcid.org/oauth/token';
+
+
 
     /** @var HttpClient */
     protected $httpClient;
+
+    /** @var string */
+    protected $clientId;
+
+    /** @var string */
+    protected $clientSecret;
+
+    /** @var string|null  Jeton d'accès en cache pour la durée de vie du client */
+    protected $accessToken;
+
+    /** @var int|null  Timestamp d'expiration du jeton en cache */
+    protected $accessTokenExpiresAt;
 
     public function __construct(Settings $settings, $api, $logger, $connection, $entityManager, HttpClient $httpClient)
     {
@@ -25,6 +40,8 @@ class OrcidClient extends MainClient
         $this->connection    = $connection;
         $this->entityManager = $entityManager;
         $this->httpClient    = $httpClient;
+        $this->clientId      = $settings->get('scanr_orcid_client_id', '');
+        $this->clientSecret  = $settings->get('scanr_orcid_client_secret', '');
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -36,7 +53,7 @@ class OrcidClient extends MainClient
         try {
             $this->httpClient->resetParameters();
             $this->httpClient->setUri(self::API_URL . '/search?q=orcid&rows=1');
-            $this->httpClient->setHeaders(['Accept' => 'application/json']);
+            $this->httpClient->setHeaders($this->authHeaders());
             $response = $this->httpClient->send();
             return $response->isSuccess();
         } catch (\Exception $e) {
@@ -56,24 +73,26 @@ class OrcidClient extends MainClient
         // Construit la requête ORCID (recherche dans tous les champs texte)
         $luceneQuery = $this->buildLuceneQuery($query);
 
-        $uri = self::API_URL . '/search?q=' . urlencode($luceneQuery)
+        $uri = self::API_URL . '/search?q=' . $luceneQuery//problème avec urlencode($luceneQuery)
             . '&start=' . $page
             . '&rows=' . $size;
-
         $this->logger->info('ORCID search: {uri}', ['uri' => $uri, 'referenceId' => 'OrcidClient']);
 
         try {
+            $token = $this->getAccessToken();
+            $cmd = "curl -H 'Accept: application/vnd.orcid+json' -H 'Authorization: Bearer ".$token."' '".$uri."'";
+            exec($cmd, $output, $retval);
+            $data = json_decode(implode(' ',$output),true);
+            /*PROBbleme avec httpClient 
             $this->httpClient->resetParameters();
             $this->httpClient->setUri($uri);
-            $this->httpClient->setHeaders(['Accept' => 'application/json']);
-            $response = $this->httpClient->send();
-
+            $this->httpClient->setHeaders($this->authHeaders());
+            $response = $this->httpClient->send();            
             if (!$response->isSuccess()) {
                 throw new \Exception('ORCID API error ' . $response->getStatusCode());
             }
-//"{"response-code":500,"developer-message":"org.apache.solr.client.solrj.impl.HttpSolrClient.RemoteSolrException Full validation error: Error from server at http://localhost:7983/solr/profile: org.apache.solr.search.SyntaxError: Cannot parse 'given-names:Andreas+AND+family-name:Giannakoulopoulos': Encountered \" \":\" \": \"\" at line 1, column 35.\nWas expecting one of:\n    <EOF> \n    <AND> ...\n    <OR> ...\n    <NOT> ...\n    \"+\" ...\n    \"-\" ...\n    <BAREOPER> ...\n    \"(\" ...\n    \"*\" ...\n    \"^\" ...\n    <QUOTED> ...\n    <TERM> ...\n    <FUZZY_SLOP> ...\n    <PREFIXTERM> ...\n    <WILDTERM> ...\n    <REGEXPTERM> ...\n    \"[\" ...\n    \"{\" ...\n    <LPARAMS> ...\n    \"filter(\" ...\n    <NUMBER> ...","user-message":"Something went wrong in ORCID.","error-code":9008,"more-info":"https://members.orcid.org/api/resources/troubleshooting"}"
-
             $data  = json_decode($response->getBody(), true);
+            */
             $total = (int) ($data['num-found'] ?? 0);
             $hits  = [];
 
@@ -117,7 +136,7 @@ class OrcidClient extends MainClient
     {
         $this->httpClient->resetParameters();
         $this->httpClient->setUri(self::API_URL . '/' . $orcid . '/person');
-        $this->httpClient->setHeaders(['Accept' => 'application/json']);
+        $this->httpClient->setHeaders($this->authHeaders());
         $response = $this->httpClient->send();
 
         if (!$response->isSuccess()) {
@@ -127,6 +146,70 @@ class OrcidClient extends MainClient
         $data = json_decode($response->getBody(), true);
 
         return $this->formatPersonFromOrcid($orcid, $data);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Authentification OAuth2 (client_credentials)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * En-têtes HTTP à joindre à chaque appel à l'API publique ORCID.
+     */
+    protected function authHeaders(): array
+    {
+        return [
+            'Accept'        => 'application/vnd.orcid+json',
+            'Authorization' => 'Bearer ' . $this->getAccessToken(),
+        ];
+    }
+
+    /**
+     * Récupère un jeton d'accès via le flux OAuth2 client_credentials
+     * (2-legged, sans redirection utilisateur), et le met en cache
+     * pour la durée de vie de l'instance.
+     *
+     * Documentation : https://info.orcid.org/documentation/api-tutorials/api-tutorial-read-data-on-a-record/
+     */
+    protected function getAccessToken(): string
+    {
+        if ($this->accessToken !== null && time() < $this->accessTokenExpiresAt) {
+            return $this->accessToken;
+        }
+
+        if ($this->clientId === '' || $this->clientSecret === '') {
+            throw new \Exception(
+                'ORCID API : identifiants client manquants. Renseignez le Client ID et le Client Secret '
+                . 'dans les paramètres du module (obtenus sur https://orcid.org, Developer Tools).'
+            );
+        }
+
+        $this->httpClient->resetParameters();
+        $this->httpClient->setUri(self::TOKEN_URL);
+        $this->httpClient->setMethod('POST');
+        $this->httpClient->setHeaders(['Accept' => 'application/json']);
+        $this->httpClient->setParameterPost([
+            'client_id'     => $this->clientId,
+            'client_secret' => $this->clientSecret,
+            'grant_type'    => 'client_credentials',
+            'scope'         => '/read-public',
+        ]);
+        $response = $this->httpClient->send();
+
+        if (!$response->isSuccess()) {
+            throw new \Exception('ORCID OAuth error ' . $response->getStatusCode() . ': ' . $response->getBody());
+        }
+
+        $data = json_decode($response->getBody(), true);
+
+        if (empty($data['access_token'])) {
+            throw new \Exception('ORCID OAuth: réponse invalide, access_token manquant.');
+        }
+
+        $this->accessToken = $data['access_token'];
+        // Marge de sécurité de 60s pour éviter d'utiliser un jeton expiré entre la vérification et l'appel.
+        $this->accessTokenExpiresAt = time() + (int) ($data['expires_in'] ?? 0) - 60;
+
+        return $this->accessToken;
     }
 
     /**

@@ -87,10 +87,13 @@ return [
             'scanr_claude_model'   => 'claude-haiku-4-5-20251001',
             'scanr_albert_api_key' => '',
             /*liste des modèles disponible via cette commande :
-            curl -sS "https://albert.api.etalab.gouv.fr/v1/models" \                 
-                -H "Authorization: Bearer $API_KEY" -o models.json  
+            curl -sS "https://albert.api.etalab.gouv.fr/v1/models" \
+                -H "Authorization: Bearer $API_KEY" -o models.json
             */
-            'scanr_albert_model'   => 'openai/gpt-oss-120b',            
+            'scanr_albert_model'   => 'openai/gpt-oss-120b',
+            'scanr_orcid_client_id'     => '',
+            'scanr_orcid_client_secret' => '',
+            'scanr_orcid_redirect_uri'  => '',
         ],
         'user_settings' => [
             'scanr_labos_admin' => []
