@@ -23,7 +23,8 @@ class IndexControllerFactory implements FactoryInterface
             $services->get('Omeka\Settings'),
             $services->get('Omeka\Settings\User'),
             $services->get('Scanr\Geocoding'),
-            $services->get('Scanr\StructuresUpdater')
+            $services->get('Scanr\StructuresUpdater'),
+            $services->get('Scanr\OrcidClient')
         );
     }
 }

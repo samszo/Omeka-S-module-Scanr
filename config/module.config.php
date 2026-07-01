@@ -32,6 +32,7 @@ return [
             'Scanr\SqlClient'         => Service\SqlClientFactory::class,
             'Scanr\StructuresUpdater' => Service\StructuresUpdaterFactory::class,
             'Scanr\Geocoding'         => Service\GeocodingFactory::class,
+            'Scanr\OrcidClient'       => Service\OrcidClientFactory::class,
         ],
     ],
     'controllers' => [

@@ -128,7 +128,77 @@ $this->headTitle($this->translate('Scanr - Recherche de personnes'));
             <?php endif; ?>
             
         <?php else: ?>
-            <p class="no-results"><?php echo $this->translate('Aucun résultat trouvé.'); ?></p>
+            <p class="no-results"><?php echo $this->translate('Aucun résultat trouvé dans scanR.'); ?></p>
         <?php endif; ?>
+    </div>
+<?php endif; ?>
+
+<?php if (!empty($orcidResults) && $orcidResults['total'] > 0): ?>
+    <div class="scanr-results orcid-results">
+        <h2><?php echo sprintf(
+            $this->translate('Résultats ORCID pour "%s" (%d)'),
+            $this->escapeHtml($query),
+            $orcidResults['total']
+        ); ?></h2>
+        <p class="notice"><?php echo $this->translate('Personne non trouvée dans scanR — résultats issus de l\'annuaire ORCID.'); ?></p>
+
+        <table class="tablesaw" data-tablesaw-mode="stack">
+            <thead>
+                <tr>
+                    <th><?php echo $this->translate('Nom'); ?></th>
+                    <th><?php echo $this->translate('Prénom'); ?></th>
+                    <th><?php echo $this->translate('Item Omeka'); ?></th>
+                    <th><?php echo $this->translate('Identifiants'); ?></th>
+                    <th><?php echo $this->translate('Actions'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($orcidResults['hits'] as $person): ?>
+                    <tr>
+                        <td><?php echo $this->escapeHtml($person['lastName']); ?></td>
+                        <td><?php echo $this->escapeHtml($person['firstName']); ?></td>
+                        <td>
+                            <?php
+                            if (!empty($person['items'])) {
+                                $items = array_map(function($it) {
+                                    return $it->link($it->displayTitle());
+                                }, array_slice($person['items'], 0, 2));
+                                echo implode(', ', array_filter($items));
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <?php
+                            foreach ($person['externalIds'] as $ext) {
+                                if ($ext['type'] === 'orcid') {
+                                    echo '<a href="' . $this->escapeHtml($ext['url']) . '" target="_blank" rel="noopener">'
+                                        . $this->escapeHtml($ext['id']) . '</a>';
+                                    break;
+                                }
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($person['items'])): ?>
+                                <form method="post" action="<?php echo $this->url('admin/scanr/associer'); ?>" style="display: inline;">
+                                    <input type="hidden" name="person_id" value="<?php echo $this->escapeHtml($person['id']); ?>">
+                                    <input type="hidden" name="item_id" value="<?php echo $this->escapeHtml($person['items'][0]->id()); ?>">
+                                    <button type="submit" class="button" onclick="return confirm('<?php echo $this->translate('Associer cette personne ?'); ?>');">
+                                        <?php echo $this->translate('Associer'); ?>
+                                    </button>
+                                </form>
+                            <?php else: ?>
+                                <form method="post" action="<?php echo $this->url('admin/scanr/import'); ?>" style="display: inline;">
+                                    <input type="hidden" name="person_id" value="<?php echo $this->escapeHtml($person['id']); ?>">
+                                    <button type="submit" class="button" onclick="return confirm('<?php echo $this->translate('Importer depuis ORCID ?'); ?>');">
+                                        <?php echo $this->translate('Importer (ORCID)'); ?>
+                                    </button>
+                                </form>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
 <?php endif; ?>

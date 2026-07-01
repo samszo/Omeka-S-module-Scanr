@@ -8,6 +8,7 @@ use Laminas\Authentication\AuthenticationService;
 use Scanr\Service\ApiClient;
 use Scanr\Service\DuckClient;
 use Scanr\Service\JsonlClient;
+use Scanr\Service\OrcidClient;
 use Scanr\Service\SqlClient;
 use Scanr\Form\SearchForm;
 use Omeka\Mvc\Exception\NotFoundException;
@@ -80,7 +81,12 @@ class IndexController extends AbstractActionController
      */
     protected $structuresUpdater;
 
-    public function __construct(AuthenticationService $auth, ApiClient $apiClient, JsonlClient $jsonlClient, DuckClient $duckClient, SqlClient $sqlClient, SearchForm $searchForm, $api, $dispatcher, $settings = null, $userSettings = null, $geocoding = null, $structuresUpdater = null)
+    /**
+     * @var OrcidClient
+     */
+    protected $orcidClient;
+
+    public function __construct(AuthenticationService $auth, ApiClient $apiClient, JsonlClient $jsonlClient, DuckClient $duckClient, SqlClient $sqlClient, SearchForm $searchForm, $api, $dispatcher, $settings = null, $userSettings = null, $geocoding = null, $structuresUpdater = null, ?OrcidClient $orcidClient = null)
     {
         $this->auth               = $auth;
         $this->apiClient          = $apiClient;
@@ -94,6 +100,7 @@ class IndexController extends AbstractActionController
         $this->userSettings       = $userSettings;
         $this->geocoding          = $geocoding;
         $this->structuresUpdater  = $structuresUpdater;
+        $this->orcidClient        = $orcidClient;
 
         $this->setRequester();
     }
@@ -146,13 +153,24 @@ class IndexController extends AbstractActionController
 
         try {
             $results = $this->requester->searchPersons($query, $page, $size);
-            
+
+            // Fallback ORCID si aucun résultat dans scanR
+            $orcidResults = null;
+            if (empty($results['hits']) && $this->orcidClient) {
+                try {
+                    $orcidResults = $this->orcidClient->searchPersons($query, $page, $size);
+                } catch (\Exception $e) {
+                    $this->messenger()->addWarning('ORCID : ' . $e->getMessage());
+                }
+            }
+
             $view->setVariables([
-                'form' => $this->searchForm,
-                'results' => $results,
-                'query' => $query,
-                'currentPage' => $page + 1,
-                'totalPages' => ceil($results['total'] / $size),
+                'form'         => $this->searchForm,
+                'results'      => $results,
+                'orcidResults' => $orcidResults,
+                'query'        => $query,
+                'currentPage'  => $page + 1,
+                'totalPages'   => ceil($results['total'] / $size),
             ]);
         } catch (\Exception $e) {
             $this->messenger()->addError('Erreur lors de la recherche: ' . $e->getMessage());
